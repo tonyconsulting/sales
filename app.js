@@ -2,7 +2,9 @@
 const API = "https://gwococcxzrrtadtricnd.supabase.co/functions/v1/api";
 const CODE = new URLSearchParams(location.search).get("c") || "";
 
-let MOI = null, EQUIPE = [], RECORDS = [], RDVS = [], PERIOD = "7j", TYPE = "Setting", PLANFILTRE = "tous";
+let MOI = null, EQUIPE = [], RECORDS = [], RDVS = [], PERIOD = "7j", TYPE = "Setting", PLANFILTRE = "tous", VUEQUIPE = "toutes";
+const NOM_EQUIPE = { kelian: "Team Kélian", mila: "Team Mila" };
+const chipEquipe = e => (MOI && MOI.role === "admin" && e) ? `<span class="pill ${e === "mila" ? "teamM" : "teamK"}" title="${NOM_EQUIPE[e] || e}">${e === "mila" ? "M" : "K"}</span> ` : "";
 
 const el = id => document.getElementById(id);
 const eur = n => (Number(n) || 0).toLocaleString("fr-FR") + " €";
@@ -40,7 +42,7 @@ const MAP = {
 function adapt(row) {
   const f = {};
   for (const k in MAP) if (row[k] !== null && row[k] !== undefined && row[k] !== "") f[MAP[k]] = row[k];
-  return { fields: f, createdTime: row.created_at, id: row.id };
+  return { fields: f, createdTime: row.created_at, id: row.id, equipe: row.equipe };
 }
 
 function roleMatchFront(type, roleVente) {
@@ -84,7 +86,7 @@ function etatTexte(r) {
 
 function renderPlanning(today) {
   const moi = MOI.nom, admin = MOI.role === "admin";
-  const actifs = RDVS.filter(r => r.statut !== "annule");
+  const actifs = rdvsVisibles().filter(r => r.statut !== "annule");
   const nonConfirmes = actifs.filter(r => r.statut !== "confirme");
 
   const pourMoi = nonConfirmes.filter(r =>
@@ -106,7 +108,7 @@ function renderPlanning(today) {
   if (pourMoi.length) {
     html += `<h2>À prendre — c'est pour toi</h2>` + pourMoi.map(r => `
       <div class="slot">
-        <div class="stitre">${esc(r.type)} · ${quandJoli(r.quand, today)}</div>
+        <div class="stitre">${chipEquipe(r.equipe)}${esc(r.type)} · ${quandJoli(r.quand, today)}</div>
         <div class="sinfo">${slotInfo(r)}</div>
         ${ficheHTML(r)}
         <div class="abtns">
@@ -134,7 +136,7 @@ function renderPlanning(today) {
   if (enAttente.length) {
     html += `<h2>En cours d'attribution</h2>` + enAttente.map(r => `
       <div class="slot grise">
-        <div class="stitre">${esc(r.type)} · ${quandJoli(r.quand, today)}</div>
+        <div class="stitre">${chipEquipe(r.equipe)}${esc(r.type)} · ${quandJoli(r.quand, today)}</div>
         <div class="sinfo">${slotInfo(r)}</div>
         <div class="setat">${etatTexte(r)}</div>
         <div class="abtns">${outilsSetter(r)}</div>
@@ -155,7 +157,7 @@ function renderPlanning(today) {
         parJour[j].map(r => `
           <div class="pl ${r.statut === "confirme" ? "" : "grise"}">
             <span class="h">${heureLocale(r.quand)}</span>
-            <span class="pill grey">${esc(r.type)}</span>
+            ${chipEquipe(r.equipe)}<span class="pill grey">${esc(r.type)}</span>
             <span>${esc(r.prospect)}</span>
             <span class="pill">${r.assigne_a ? esc(r.assigne_a) : "?"}</span>
             <span class="conf ${r.statut === "confirme" ? "today" : ""}" style="font-size:12px">${r.statut === "confirme" ? "confirmé" : "en attente"}</span>
@@ -196,8 +198,18 @@ function renderPlanning(today) {
     : `<div class="empty">Aucun RDV aujourd'hui.</div>`;
 }
 
+// Vue admin : filtre par équipe appliqué avant tous les calculs
+function recsVisibles() {
+  if (MOI.role !== "admin" || VUEQUIPE === "toutes") return RECORDS;
+  return RECORDS.filter(r => r.equipe === VUEQUIPE);
+}
+function rdvsVisibles() {
+  if (MOI.role !== "admin" || VUEQUIPE === "toutes") return RDVS;
+  return RDVS.filter(r => r.equipe === VUEQUIPE);
+}
+
 function render() {
-  const s = SalesStats.compute(RECORDS, PERIOD, new Date());
+  const s = SalesStats.compute(recsVisibles(), PERIOD, new Date());
   const g = s.global;
   const F = SalesStats.F;
 
@@ -262,7 +274,7 @@ function render() {
         ]))
     : `<div class="empty">Aucun prospect identifié.</div>`;
 
-  const calls = RECORDS.slice()
+  const calls = recsVisibles().slice()
     .sort((a, c) => (SalesStats.dateOf(c) + (c.createdTime || "")).localeCompare(SalesStats.dateOf(a) + (a.createdTime || "")))
     .slice(0, 100);
   const headA = [{ t: "Date" }, { t: "Type" }, { t: "Qui" }, { t: "Prospect" }, { t: "Résultat" }, { t: "Montant", n: 1 }, { t: "Encaissé", n: 1 }];
@@ -275,7 +287,7 @@ function render() {
           if (f[F.cause]) res += " (" + f[F.cause] + ")";
           const row = [
             { t: esc(SalesStats.dateOf(r)) },
-            { t: `<span class="pill grey">${esc(f[F.type] || "?")}</span>` },
+            { t: chipEquipe(r.equipe) + `<span class="pill grey">${esc(f[F.type] || "?")}</span>` },
             { t: esc(f[F.qui] || "?") }, { t: esc(f[F.prospect] || "?") }, { t: esc(res) },
             { t: f[F.montant] ? eur(f[F.montant]) : "", n: 1 },
             { t: f[F.encaisse] ? eur(f[F.encaisse]) : "", n: 1 }
@@ -383,7 +395,10 @@ async function submitForm(e) {
   c.source = el("inSource").value;
   c.date = el("inDate").value || todayLocal();
   c.notes = el("inNotes").value.trim();
-  if (MOI.role === "admin") c.qui = el("inQui").value;
+  if (MOI.role === "admin") {
+    c.qui = el("inQui").value;
+    if (el("fEquipeAdmin").style.display !== "none") c.equipe = el("inEquipe").value;
+  }
 
   if (TYPE === "Setting") {
     c.res_setting = el("inResSetting").value;
@@ -466,7 +481,7 @@ async function init() {
   if (!CODE) { el("lock").style.display = "block"; return; }
   try {
     const cfg = await call("config");
-    MOI = cfg.moi; EQUIPE = (cfg.equipe || []).map(m => m.nom);
+    MOI = cfg.moi; EQUIPE = cfg.equipe || [];
   } catch (e) {
     el("lock").style.display = "block";
     el("lockMsg").textContent = e.message === "code invalide"
@@ -478,7 +493,15 @@ async function init() {
   el("hello").textContent = "Salut " + MOI.nom;
   if (MOI.role === "admin") {
     el("fQuiAdmin").style.display = "";
-    el("inQui").innerHTML = EQUIPE.map(n => `<option${n === MOI.nom ? " selected" : ""}>${esc(n)}</option>`).join("");
+    el("inQui").innerHTML = EQUIPE.map(m => `<option${m.nom === MOI.nom ? " selected" : ""}>${esc(m.nom)}</option>`).join("");
+    el("vueEquipe").style.display = "";
+    el("vueEquipe").addEventListener("change", () => { VUEQUIPE = el("vueEquipe").value; render(); });
+    const majEquipeForm = () => {
+      const m = EQUIPE.find(x => x.nom === el("inQui").value);
+      el("fEquipeAdmin").style.display = (m && m.equipe) ? "none" : "";
+    };
+    el("inQui").addEventListener("change", majEquipeForm);
+    majEquipeForm();
   }
   resetForm();
   setType("Setting");
