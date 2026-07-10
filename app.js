@@ -831,11 +831,45 @@ async function initNotifs() {
   });
 }
 
+// Son « cha-ching » (caisse enregistreuse) quand une vente closée arrive
+// pendant que l'app est ouverte — les notifs verrouillées gardent le son
+// système (limite Apple/Google pour les web apps).
+let AUDIOCTX = null, CLOSES_VUS = null;
+function debloqueAudio() {
+  try {
+    AUDIOCTX = AUDIOCTX || new (window.AudioContext || window.webkitAudioContext)();
+    if (AUDIOCTX.state === "suspended") AUDIOCTX.resume();
+  } catch (_) {}
+}
+function chaChing() {
+  try {
+    if (!AUDIOCTX || AUDIOCTX.state !== "running") return;
+    const t0 = AUDIOCTX.currentTime;
+    [[1318.5, 0], [1760, 0.09]].forEach(([f, dt]) => {
+      const o = AUDIOCTX.createOscillator(), g = AUDIOCTX.createGain();
+      o.type = "triangle"; o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, t0 + dt);
+      g.gain.exponentialRampToValueAtTime(0.35, t0 + dt + 0.012);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + dt + 0.55);
+      o.connect(g); g.connect(AUDIOCTX.destination);
+      o.start(t0 + dt); o.stop(t0 + dt + 0.6);
+    });
+  } catch (_) {}
+}
+
 async function loadData() {
   try {
     const d = await call("data");
     RECORDS = (d.calls || []).map(adapt);
     RDVS = d.rdvs || [];
+    // Nouvelle vente closée par quelqu'un d'autre depuis le dernier chargement ?
+    const Fx = SalesStats.F;
+    const closesIds = new Set(RECORDS.filter(r => (r.fields[Fx.resClosing] || r.fields[Fx.resPres]) === "Closé").map(r => r.id));
+    if (CLOSES_VUS && [...closesIds].some(id => !CLOSES_VUS.has(id) &&
+        (RECORDS.find(r => r.id === id) || { fields: {} }).fields[Fx.qui] !== MOI.nom)) {
+      chaChing();
+    }
+    CLOSES_VUS = closesIds;
     majProspectsIdx();
     render();
     el("err").style.display = "none";
@@ -913,6 +947,7 @@ async function init() {
   el("planTous").addEventListener("click", () => { PLANFILTRE = "tous"; el("planTous").classList.add("active"); el("planMoi").classList.remove("active"); render(); });
   el("refresh").addEventListener("click", loadData);
   el("logForm").addEventListener("submit", submitForm);
+  document.addEventListener("click", debloqueAudio, { once: true });
   initNotifs().catch(() => {});
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") loadData(); });
   await loadData();
