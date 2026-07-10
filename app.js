@@ -417,6 +417,12 @@ function render() {
 
   renderPlanning(s.today);
 
+  // Pastille de la cloche (mobile) : RDV à traiter + relances
+  const nbPlan = el("bPlan").style.display === "none" ? 0 : (parseInt(el("bPlan").textContent, 10) || 0);
+  const nbCloche = nbPlan + (s.matin.relancesAFaire || 0);
+  el("bellDot").textContent = nbCloche;
+  el("bellDot").style.display = nbCloche ? "flex" : "none";
+
   el("dot").className = "dot";
   el("updated").textContent = s.totalRecords + " calls loggés. Mis à jour à " +
     new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }) + ".";
@@ -428,7 +434,13 @@ function showPage(id) {
   document.querySelectorAll("#nav button").forEach(x => x.classList.toggle("active", x.dataset.page === id));
   el("pageTitle").textContent = PAGES[id][0];
   el("pageSub").textContent = PAGES[id][1];
+  el("topTitre").textContent = PAGES[id][0];
   el("periodCtrls").style.display = (id === "log" || id === "planning") ? "none" : "";
+}
+// Tiroir de navigation (mobile)
+function fermeTiroir() {
+  el("sideNav").classList.remove("open");
+  el("navOverlay").classList.remove("on");
 }
 
 // ----- Chips : un tap au lieu d'un menu déroulant -----
@@ -706,6 +718,14 @@ async function init() {
   }
   el("app").style.display = "";
   el("hello").textContent = "Salut " + MOI.nom;
+  el("userbox").style.display = "";
+  el("uinit").textContent = (MOI.nom || "?")[0].toUpperCase();
+  el("unom").textContent = MOI.nom;
+  el("urole").textContent = MOI.role === "admin" ? "Head of sales" : (MOI.role_vente || "membre");
+  el("burger").addEventListener("click", () => { el("sideNav").classList.add("open"); el("navOverlay").classList.add("on"); });
+  el("navOverlay").addEventListener("click", fermeTiroir);
+  el("asideClose").addEventListener("click", fermeTiroir);
+  el("bellBtn").addEventListener("click", () => { showPage("planning"); fermeTiroir(); });
   const noms = EQUIPE.map(m => m.nom);
   const optsMoi = noms.map(n => `<option${n === MOI.nom ? " selected" : ""}>${esc(n)}</option>`).join("");
   el("inQuiPres").innerHTML = optsMoi;
@@ -731,7 +751,7 @@ async function init() {
   resetForm();
   setType("Setting");
   showPage(MOI.role === "admin" ? "dashboard" : "log");
-  document.querySelectorAll("#nav button").forEach(b => b.addEventListener("click", () => showPage(b.dataset.page)));
+  document.querySelectorAll("#nav button").forEach(b => b.addEventListener("click", () => { showPage(b.dataset.page); fermeTiroir(); }));
   document.querySelectorAll("#typeBtns button").forEach(b => b.addEventListener("click", () => setType(b.dataset.t)));
   ["inResSetting", "inCause", "inResVente"].forEach(i => el(i).addEventListener("change", majConditionnels));
   document.querySelectorAll("#periodCtrls button[data-p]").forEach(b => b.addEventListener("click", () => {
