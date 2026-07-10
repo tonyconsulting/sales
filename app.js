@@ -2,7 +2,7 @@
 const API = "https://gwococcxzrrtadtricnd.supabase.co/functions/v1/api";
 const CODE = new URLSearchParams(location.search).get("c") || "";
 
-let MOI = null, EQUIPE = [], RECORDS = [], PERIOD = "mois", TYPE = "Setting";
+let MOI = null, EQUIPE = [], RECORDS = [], PERIOD = "7j", TYPE = "Setting";
 
 const el = id => document.getElementById(id);
 const eur = n => (Number(n) || 0).toLocaleString("fr-FR") + " €";
@@ -17,14 +17,13 @@ const PAGES = {
   dashboard: ["Dashboard", "Vue d'ensemble"],
   pipeline: ["Pipeline", "Suivez vos deals"],
   prospects: ["Prospects", "Tous les prospects identifiés"],
-  rdv: ["Rendez-vous", "Les RDV posés à venir"],
+  rdv: ["Rendez-vous", "Settings, prez et closings calés"],
   appels: ["Appels", "Les 100 derniers calls loggés"],
   relances: ["Relances", "Les follow-ups à faire"],
   kpi: ["KPI", "Analysez vos perfs"]
 };
-const ETAT_PILL = { "Closé": "", "À relancer": "amber", "En closing": "", "RDV posé": "", "Perdu": "red", "Contacté": "grey" };
+const ETAT_PILL = { "Closé": "", "À relancer": "amber", "En closing": "", "En prez": "", "Vu en setting": "grey", "Setting calé": "grey", "Perdu": "red", "Contacté": "grey" };
 
-// Adaptateur : ligne base de données -> format attendu par le moteur de stats
 const MAP = {
   type: "Type de call", date: "Date", qui: "Qui", telephone: "Téléphone",
   instagram: "Instagram", source: "Source", res_setting: "Résultat setting",
@@ -32,7 +31,7 @@ const MAP = {
   res_pres: "Résultat présentation", res_closing: "Résultat closing",
   offre: "Offre vendue", montant: "Montant total", encaisse: "Encaissé aujourd'hui",
   paiement: "Type de paiement", date_relance: "Date de relance",
-  prospect: "Prospect", notes: "Notes"
+  prospect: "Prospect", notes: "Notes", cause: "Cause"
 };
 function adapt(row) {
   const f = {};
@@ -58,58 +57,71 @@ function tableHTML(headers, rows) {
 }
 
 function render() {
-  const s = SalesStats.compute(RECORDS, PERIOD, new Date(), {});
-  const p = s.periode;
+  const s = SalesStats.compute(RECORDS, PERIOD, new Date());
+  const g = s.global;
+  const F = SalesStats.F;
 
   el("bRdv").style.display = s.rdvJour.length ? "" : "none";
   el("bRdv").textContent = s.rdvJour.length;
   el("bRel").style.display = s.matin.relancesAFaire ? "" : "none";
   el("bRel").textContent = s.matin.relancesAFaire;
 
-  el("k1").textContent = s.matin.rdvHier;
-  el("k1h").textContent = "settings du " + s.yesterday;
-  el("k2").textContent = eur(s.matin.encaisseMois);
-  el("k2h").textContent = "closings + paiements loggés";
+  el("k1").textContent = s.matin.rdvJour;
+  el("k2").textContent = eur(s.matin.encaisse30);
   el("k3").textContent = s.matin.relancesAFaire;
   el("k3h").textContent = s.matin.relancesAFaire ? "dont en retard : " + s.relances.filter(r => r.date < s.today).length : "rien en attente";
 
   el("strip").innerHTML = [
-    ["Vendu (période)", eur(p.vendu)],
-    ["Encaissé (période)", eur(p.encaisse)],
-    ["Taux de closing", fmtPct(p.txClose)],
-    ["Show-up", fmtPct(p.showUp)],
-    ["No-show", fmtPct(p.txNoShow)],
-    ["Passe en closing", fmtPct(p.txPres)],
-    ["Deals perdus", p.dealsPerdus],
-    ["Closés après relance", fmtPct(p.txApresRelance)]
+    ["Settings calés", g.cales],
+    ["Settings effectués", g.effectues],
+    ["Show", fmtPct(g.txShow)],
+    ["Non aboutis", g.nonAboutis],
+    ["Part en prez/closing", fmtPct(g.txAbouti)],
+    ["Closés", g.closes],
+    ["Taux de closing", fmtPct(g.txClose)],
+    ["Vendu", eur(g.vendu)],
+    ["Encaissé", eur(g.encaisse)],
+    ["Panier moyen", g.panier === null ? "–" : eur(g.panier)]
   ].map(([l, v]) => `<div class="card"><div class="label">${l}</div><div class="value">${v}</div></div>`).join("");
 
+  const causesArr = Object.entries(g.causes).sort((a, c) => c[1] - a[1]);
+  el("causes").innerHTML = causesArr.length
+    ? tableHTML([{ t: "Cause" }, { t: "Settings", n: 1 }], causesArr.map(([c, n]) => [{ t: esc(c) }, { t: n, n: 1 }]))
+    : `<div class="empty">Aucun setting non abouti sur la période.</div>`;
+
+  el("reste").innerHTML = s.reste.liste.length
+    ? tableHTML([{ t: "Prospect" }, { t: "Contact" }, { t: "Reste dû", n: 1 }],
+        s.reste.liste.map(x => [{ t: esc(x.prospect) }, { t: esc(x.contact) }, { t: eur(x.du), n: 1 }]))
+      .replace("<table>", `<table><tr><th colspan="2">TOTAL</th><th class="num">${eur(s.reste.total)}</th></tr>`)
+    : `<div class="empty">Aucun acompte en attente de solde.</div>`;
+
   const rdvT = rows => tableHTML(
-    [{ t: "Quand" }, { t: "Heure" }, { t: "Prospect" }, { t: "Avec" }, { t: "Setter" }, { t: "Contact" }, { t: "Fiche" }],
+    [{ t: "Quand" }, { t: "Heure" }, { t: "Quoi" }, { t: "Prospect" }, { t: "Avec" }, { t: "Setter" }, { t: "Contact" }, { t: "Fiche" }],
     rows.map(r => [
       { t: r.jour === s.today ? `<span class="today">${jolieDate(r.jour, s.today)}</span>` : esc(jolieDate(r.jour, s.today)) },
-      { t: esc(r.heure) || "?" }, { t: esc(r.prospect) }, { t: `<span class="pill">${esc(r.avec)}</span>` },
+      { t: esc(r.heure) || "?" }, { t: `<span class="pill grey">${esc(r.quoi)}</span>` }, { t: esc(r.prospect) },
+      { t: `<span class="pill">${esc(r.avec)}</span>` },
       { t: esc(r.setter) }, { t: esc(r.contact) },
       { t: r.fiche ? `<details><summary>voir</summary><div>${esc(r.fiche)}</div></details>` : "" }
     ]));
   el("rdvjour").innerHTML = s.rdvJour.length ? rdvT(s.rdvJour) : `<div class="empty">Aucun RDV aujourd'hui.</div>`;
-  el("rdv").innerHTML = s.rdvAVenir.length ? rdvT(s.rdvAVenir.slice(0, 30)) : `<div class="empty">Aucun RDV à venir. Le moment idéal pour poser des settings.</div>`;
+  el("rdv").innerHTML = s.rdvAVenir.length ? rdvT(s.rdvAVenir.slice(0, 30)) : `<div class="empty">Aucun RDV à venir. Le moment idéal pour caler des settings.</div>`;
 
   const pi = s.pipeline;
-  const maxPi = Math.max(pi.contacte, pi.rdvPose, pi.enClosing, pi.aRelancer, pi.close, pi.perdu, 1);
+  const maxPi = Math.max(pi.contacte, pi.cale, pi.vu, pi.enPrez, pi.enClosing, pi.aRelancer, pi.close, pi.perdu, 1);
   const bar = (label, n, cls, eurVal) => `<div class="row"><div class="name">${label}${eurVal ? `<br><span class="eur">${eur(eurVal)}</span>` : ""}</div><div class="bar"><i class="${cls || ""}" style="width:${Math.round(n / maxPi * 100)}%"></i></div><div class="n">${n}</div></div>`;
   el("pipe").innerHTML = pi.total
-    ? `<div class="pipe">` + bar("Contacté", pi.contacte, "grey") + bar("RDV posé", pi.rdvPose) + bar("En closing", pi.enClosing) +
-      bar("À relancer", pi.aRelancer, "", pi.aRelancerEur) + bar("Closé", pi.close, "", pi.closeEur) + bar("Perdu", pi.perdu, "red") + `</div>`
-    : `<div class="empty">Aucun prospect identifié pour l'instant (l'Instagram relie les calls d'un même prospect).</div>`;
+    ? `<div class="pipe">` + bar("Setting calé", pi.cale, "grey") + bar("Vu en setting", pi.vu, "grey") + bar("En prez", pi.enPrez) +
+      bar("En closing", pi.enClosing) + bar("À relancer", pi.aRelancer, "", pi.aRelancerEur) + bar("Closé", pi.close, "", pi.closeEur) + bar("Perdu", pi.perdu, "red") + `</div>`
+    : `<div class="empty">Aucun prospect identifié pour l'instant.</div>`;
 
-  const ORDRE = ["Contacté", "RDV posé", "En closing", "À relancer", "Closé", "Perdu"];
+  const ORDRE = ["Setting calé", "Vu en setting", "En prez", "En closing", "À relancer", "Closé", "Perdu"];
   el("kanban").innerHTML = s.prospects.length
     ? ORDRE.map(etat => {
         const list = s.prospects.filter(x => x.etat === etat);
         const cards = list.slice(0, 20).map(x =>
           `<div class="kcard"><div class="kn">${esc(x.nom || x.contact || "?")}</div><div class="kc">${esc(x.contact)}</div>` +
-          (etat === "Closé" && x.vendu ? `<div class="ke">${eur(x.vendu)}</div>` : "") +
+          (etat === "Closé" && x.vendu ? `<div class="ke">${eur(x.vendu)}${x.vendu > x.encaisse ? " (reste " + eur(x.vendu - x.encaisse) + ")" : ""}</div>` : "") +
           (etat === "À relancer" && x.relanceEur ? `<div class="ke">${eur(x.relanceEur)}</div>` : "") + `</div>`).join("");
         return `<div class="kol"><h3>${etat} <span>${list.length}</span></h3>${cards}${list.length > 20 ? `<div class="kmore">+ ${list.length - 20} autres</div>` : ""}</div>`;
       }).join("")
@@ -128,14 +140,14 @@ function render() {
   const calls = RECORDS.slice()
     .sort((a, c) => (SalesStats.dateOf(c) + (c.createdTime || "")).localeCompare(SalesStats.dateOf(a) + (a.createdTime || "")))
     .slice(0, 100);
-  const F = SalesStats.F;
   const headA = [{ t: "Date" }, { t: "Type" }, { t: "Qui" }, { t: "Prospect" }, { t: "Résultat" }, { t: "Montant", n: 1 }, { t: "Encaissé", n: 1 }];
   if (MOI.role === "admin") headA.push({ t: "" });
   el("appels").innerHTML = calls.length
     ? tableHTML(headA,
         calls.map(r => {
           const f = r.fields || {};
-          const res = f[F.resSetting] || f[F.resPres] || f[F.resClosing] || (f[F.type] === "Paiement" ? "Encaissement" : "–");
+          let res = f[F.resSetting] || f[F.resPres] || f[F.resClosing] || (f[F.type] === "Paiement" ? "Encaissement" : "–");
+          if (f[F.cause]) res += " (" + f[F.cause] + ")";
           const row = [
             { t: esc(SalesStats.dateOf(r)) },
             { t: `<span class="pill grey">${esc(f[F.type] || "?")}</span>` },
@@ -174,26 +186,21 @@ function render() {
   };
   el("charts").innerHTML =
     chart("Encaissé par semaine", wk.map(w => w.encaisse), v => v ? (v >= 1000 ? Math.round(v / 100) / 10 + "k" : v) : "0") +
-    chart("Taux de closing par semaine", wk.map(w => w.tx), v => v + "%");
+    chart("Closés par semaine", wk.map(w => w.closes), v => v);
 
   const names = Object.keys(s.people).sort();
   el("people").innerHTML = names.length
     ? tableHTML(
-        [{ t: "Qui" }, { t: "Settings", n: 1 }, { t: "RDV posés", n: 1 }, { t: "Prés. tenues", n: 1 }, { t: "Passe closing", n: 1 }, { t: "Closings", n: 1 }, { t: "Closés", n: 1 }, { t: "Taux close", n: 1 }, { t: "No-show", n: 1 }, { t: "Vendu", n: 1 }, { t: "Encaissé", n: 1 }],
+        [{ t: "Qui" }, { t: "Calés", n: 1 }, { t: "Effectués", n: 1 }, { t: "Show", n: 1 }, { t: "No-show", n: 1 }, { t: "Non aboutis", n: 1 }, { t: "Vers prez", n: 1 }, { t: "Vers closing", n: 1 }, { t: "Prez closées", n: 1 }, { t: "Closings closés", n: 1 }, { t: "Taux close", n: 1 }, { t: "Vendu", n: 1 }, { t: "Encaissé", n: 1 }],
         names.map(n => { const x = s.people[n]; return [
-          { t: esc(n) }, { t: x.settings, n: 1 }, { t: x.rdvPoses, n: 1 },
-          { t: x.presTenues, n: 1 }, { t: x.presPasse, n: 1 }, { t: x.closPris, n: 1 }, { t: x.closes, n: 1 },
-          { t: fmtPct(x.closPris ? Math.round(x.closes / x.closPris * 100) : null), n: 1 },
-          { t: x.noShows, n: 1 }, { t: eur(x.vendu), n: 1 }, { t: eur(x.encaisse), n: 1 }
+          { t: esc(n) }, { t: x.cales, n: 1 }, { t: x.effectues, n: 1 },
+          { t: fmtPct(x.txShow), n: 1 }, { t: x.noShows + x.prezNoShow + x.closNoShow, n: 1 }, { t: x.nonAboutis, n: 1 },
+          { t: x.versPrez, n: 1 }, { t: x.versClosing, n: 1 },
+          { t: x.prezCloses, n: 1 }, { t: x.closCloses, n: 1 },
+          { t: fmtPct(x.txClose), n: 1 },
+          { t: eur(x.vendu), n: 1 }, { t: eur(x.encaisse), n: 1 }
         ]; }))
     : `<div class="empty">Aucun call loggé sur la période.</div>`;
-
-  const srcs = Object.keys(s.sources).sort();
-  el("sources").innerHTML = srcs.length
-    ? tableHTML(
-        [{ t: "Source" }, { t: "Settings", n: 1 }, { t: "RDV posés", n: 1 }, { t: "Closés (Insta matché)", n: 1 }],
-        srcs.map(n => { const x = s.sources[n]; return [{ t: esc(n) }, { t: x.settings, n: 1 }, { t: x.rdvPoses, n: 1 }, { t: x.closes, n: 1 }]; }))
-    : `<div class="empty">Aucune donnée de source sur la période.</div>`;
 
   el("dot").className = "dot";
   el("updated").textContent = s.totalRecords + " calls loggés. Mis à jour à " +
@@ -219,49 +226,84 @@ function todayLocal() {
   const d = new Date(), p = n => n < 10 ? "0" + n : n;
   return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
 }
+function majConditionnels() {
+  const rs = el("inResSetting").value;
+  el("caleBlock").style.display = rs === "Calé (à venir)" ? "" : "none";
+  el("causeBlock").style.display = rs === "Non abouti" ? "" : "none";
+  el("suiteBlock").style.display = (rs === "Part en prez" || rs === "Part en closing") ? "" : "none";
+  el("rappelBlock").style.display = el("inCause").value === "À rappeler" ? "" : "none";
+  const rp = el("inResPres").value;
+  el("closePBlock").style.display = rp === "Closé" ? "" : "none";
+  el("causePBlock").style.display = rp === "Pas closé" ? "" : "none";
+  el("relancePBlock").style.display = rp === "À relancer" ? "" : "none";
+  const rc = el("inResClosing").value;
+  el("closeCBlock").style.display = rc === "Closé" ? "" : "none";
+  el("causeCBlock").style.display = rc === "Pas closé" ? "" : "none";
+  el("relanceCBlock").style.display = rc === "À relancer" ? "" : "none";
+}
 function resetForm() {
-  ["inProspect", "inInsta", "inTel", "inFiche", "inMontant", "inEncaisse", "inEncaissePmt", "inNotes", "inRdvLe", "inDateRelance"].forEach(i => el(i).value = "");
-  ["inSource", "inResSetting", "inResPres", "inResClosing", "inOffre", "inPaiement", "inPaiementPmt"].forEach(i => el(i).value = "");
+  document.querySelectorAll("#logForm input, #logForm textarea").forEach(i => i.value = "");
+  document.querySelectorAll("#logForm select").forEach(sel => { if (sel.id !== "inQui" && sel.id !== "inRdvAvec") sel.value = ""; });
   el("inDate").value = todayLocal();
-  el("rdvBlock").style.display = "none";
-  el("relanceBlock").style.display = "none";
+  majConditionnels();
 }
 async function submitForm(e) {
   e.preventDefault();
   const c = { type: TYPE, prospect: el("inProspect").value.trim() };
-  if (!c.prospect) return alert("Le prénom du prospect est obligatoire.");
+  if (!c.prospect) return alert("Le prospect est obligatoire.");
   c.instagram = el("inInsta").value.trim();
   c.telephone = el("inTel").value.trim();
   c.source = el("inSource").value;
   c.date = el("inDate").value || todayLocal();
   c.notes = el("inNotes").value.trim();
   if (MOI.role === "admin") c.qui = el("inQui").value;
+
   if (TYPE === "Setting") {
     c.res_setting = el("inResSetting").value;
     if (!c.res_setting) return alert("Le résultat du setting est obligatoire.");
-    if (c.res_setting === "RDV posé") {
-      if (el("inRdvLe").value) c.rdv_le = new Date(el("inRdvLe").value).toISOString();
+    if (c.res_setting === "Calé (à venir)") {
+      if (!el("inCaleLe").value) return alert("Indique quand le setting est calé.");
+      c.rdv_le = new Date(el("inCaleLe").value).toISOString();
+    }
+    if (c.res_setting === "Non abouti") {
+      c.cause = el("inCause").value;
+      if (!c.cause) return alert("La cause est obligatoire.");
+      if (c.cause === "À rappeler" && el("inDateRappel").value) c.date_relance = el("inDateRappel").value;
+    }
+    if (c.res_setting === "Part en prez" || c.res_setting === "Part en closing") {
+      if (el("inSuiteLe").value) c.rdv_le = new Date(el("inSuiteLe").value).toISOString();
       c.rdv_avec = el("inRdvAvec").value;
       c.fiche = el("inFiche").value.trim();
     }
   }
-  if (TYPE === "Présentation") {
+  if (TYPE === "Prez") {
     c.res_pres = el("inResPres").value;
-    if (!c.res_pres) return alert("Le résultat de la présentation est obligatoire.");
+    if (!c.res_pres) return alert("Le résultat de la prez est obligatoire.");
+    if (c.res_pres === "Closé") {
+      c.offre = el("inOffreP").value;
+      c.paiement = el("inPaiementP").value;
+      if (el("inMontantP").value) c.montant = Number(el("inMontantP").value);
+      if (el("inEncaisseP").value) c.encaisse = Number(el("inEncaisseP").value);
+    }
+    if (c.res_pres === "Pas closé") c.cause = el("inCauseP").value;
+    if (c.res_pres === "À relancer" && el("inDateRelanceP").value) c.date_relance = el("inDateRelanceP").value;
   }
   if (TYPE === "Closing") {
     c.res_closing = el("inResClosing").value;
     if (!c.res_closing) return alert("Le résultat du closing est obligatoire.");
-    c.offre = el("inOffre").value;
-    c.paiement = el("inPaiement").value;
-    if (el("inMontant").value) c.montant = Number(el("inMontant").value);
-    if (el("inEncaisse").value) c.encaisse = Number(el("inEncaisse").value);
-    if (c.res_closing === "À relancer" && el("inDateRelance").value) c.date_relance = el("inDateRelance").value;
+    if (c.res_closing === "Closé") {
+      c.offre = el("inOffreC").value;
+      c.paiement = el("inPaiementC").value;
+      if (el("inMontantC").value) c.montant = Number(el("inMontantC").value);
+      if (el("inEncaisseC").value) c.encaisse = Number(el("inEncaisseC").value);
+    }
+    if (c.res_closing === "Pas closé") c.cause = el("inCauseC").value;
+    if (c.res_closing === "À relancer" && el("inDateRelanceC").value) c.date_relance = el("inDateRelanceC").value;
   }
   if (TYPE === "Paiement") {
-    if (!el("inEncaissePmt").value) return alert("Le montant encaissé est obligatoire pour un paiement.");
+    if (!el("inEncaissePmt").value) return alert("Le montant encaissé est obligatoire.");
     c.encaisse = Number(el("inEncaissePmt").value);
-    c.paiement = el("inPaiementPmt").value;
+    c.paiement = "Solde";
   }
   el("submitBtn").disabled = true;
   try {
@@ -315,8 +357,7 @@ async function init() {
   showPage(MOI.role === "admin" ? "dashboard" : "log");
   document.querySelectorAll("#nav button").forEach(b => b.addEventListener("click", () => showPage(b.dataset.page)));
   document.querySelectorAll("#typeBtns button").forEach(b => b.addEventListener("click", () => setType(b.dataset.t)));
-  el("inResSetting").addEventListener("change", () => { el("rdvBlock").style.display = el("inResSetting").value === "RDV posé" ? "" : "none"; });
-  el("inResClosing").addEventListener("change", () => { el("relanceBlock").style.display = el("inResClosing").value === "À relancer" ? "" : "none"; });
+  ["inResSetting", "inCause", "inResPres", "inResClosing"].forEach(i => el(i).addEventListener("change", majConditionnels));
   document.querySelectorAll("#periodCtrls button[data-p]").forEach(b => b.addEventListener("click", () => {
     document.querySelectorAll("#periodCtrls button[data-p]").forEach(x => x.classList.remove("active"));
     b.classList.add("active"); PERIOD = b.dataset.p; render();
