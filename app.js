@@ -10,7 +10,7 @@ try {
 // Clé PUBLIQUE de signature des notifications (la privée est côté serveur)
 const VAPID_PUB = "BBefpGJrlJu2jhuahy0XnidzpnE5nfZ84kRh3YueXISXD036WLlbQu50vebuJcKKiF05xz5Cj_C__Qa8wc_YWNQ";
 
-let MOI = null, EQUIPE = [], RECORDS = [], RDVS = [], PERIOD = "1j", TYPE = "Setting", PLANFILTRE = "tous", VUEQUIPE = "toutes", PENDING_RDV = null, PENDING_PROSPECT = "";
+let MOI = null, EQUIPE = [], RECORDS = [], RDVS = [], PERIOD = "1j", TYPE = "Setting", PLANFILTRE = "tous", VUEQUIPE = "toutes", VUEMOI = "equipe", PENDING_RDV = null, PENDING_PROSPECT = "";
 const NOM_EQUIPE = { kelian: "Team Kélian", mila: "Team Mila" };
 const chipEquipe = e => (MOI && MOI.role === "admin" && e) ? `<span class="pill ${e === "mila" ? "teamM" : "teamK"}" title="${NOM_EQUIPE[e] || e}">${e === "mila" ? "M" : "K"}</span> ` : "";
 
@@ -254,8 +254,9 @@ function renderPlanning(today) {
     } catch (e) { alert(e.message); }
   }));
 
-  // Dashboard : RDV du jour depuis le planning
-  const jour = actifs.filter(r => jourLocal(r.quand) === today).sort((a, c) => a.quand.localeCompare(c.quand));
+  // Dashboard : RDV du jour depuis le planning (suit la vue Moi / équipe)
+  let jour = actifs.filter(r => jourLocal(r.quand) === today).sort((a, c) => a.quand.localeCompare(c.quand));
+  if (VUEMOI === "moi") jour = jour.filter(r => r.assigne_a === moi || r.setter === moi);
   el("k1").textContent = jour.length;
   el("rdvjour").innerHTML = jour.length
     ? tableHTML(
@@ -272,10 +273,15 @@ function renderPlanning(today) {
     : `<div class="empty">Aucun RDV aujourd'hui.</div>`;
 }
 
-// Vue admin : filtre par équipe appliqué avant tous les calculs
+// Filtres de vue appliqués avant tous les calculs :
+// équipe (admin) puis « Moi » (mes calls : setting/closing par moi, ou prez par moi)
 function recsVisibles() {
-  if (MOI.role !== "admin" || VUEQUIPE === "toutes") return RECORDS;
-  return RECORDS.filter(r => r.equipe === VUEQUIPE);
+  let recs = (MOI.role !== "admin" || VUEQUIPE === "toutes") ? RECORDS : RECORDS.filter(r => r.equipe === VUEQUIPE);
+  if (VUEMOI === "moi") {
+    const F = SalesStats.F;
+    recs = recs.filter(r => r.fields[F.qui] === MOI.nom || r.fields[F.quiPres] === MOI.nom);
+  }
+  return recs;
 }
 function rdvsVisibles() {
   if (MOI.role !== "admin" || VUEQUIPE === "toutes") return RDVS;
@@ -755,6 +761,7 @@ async function init() {
   document.querySelectorAll("#typeBtns button").forEach(b => b.addEventListener("click", () => setType(b.dataset.t)));
   ["inResSetting", "inCause", "inResVente"].forEach(i => el(i).addEventListener("change", majConditionnels));
   el("periodSel").addEventListener("change", () => { PERIOD = el("periodSel").value; render(); });
+  el("vueMoi").addEventListener("change", () => { VUEMOI = el("vueMoi").value; render(); });
   el("planMoi").addEventListener("click", () => { PLANFILTRE = "moi"; el("planMoi").classList.add("active"); el("planTous").classList.remove("active"); render(); });
   el("planTous").addEventListener("click", () => { PLANFILTRE = "tous"; el("planTous").classList.add("active"); el("planMoi").classList.remove("active"); render(); });
   el("refresh").addEventListener("click", loadData);
