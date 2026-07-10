@@ -634,7 +634,18 @@ async function initNotifs() {
   const sub = await reg.pushManager.getSubscription();
   if (sub && Notification.permission === "granted") {
     call("push_subscribe", { sub: sub.toJSON() }).catch(() => {});
-    zone.innerHTML = `<div class="sinfo" style="margin-bottom:14px;color:var(--muted)">Notifications activées sur cet appareil.</div>`;
+    zone.innerHTML = `<div class="sinfo" style="margin-bottom:14px;color:var(--muted)">Notifications activées sur cet appareil.
+      <button class="abtn" id="btnNotifTest" style="margin-left:8px">M'envoyer une notif de test</button></div>`;
+    el("btnNotifTest").addEventListener("click", async () => {
+      el("btnNotifTest").disabled = true;
+      el("btnNotifTest").textContent = "Envoi…";
+      try {
+        await call("push_test");
+        el("btnNotifTest").textContent = "Envoyée — elle arrive dans quelques secondes";
+      } catch (e) {
+        el("btnNotifTest").textContent = "Erreur : " + e.message;
+      }
+    });
     return;
   }
   zone.innerHTML = `<div class="slot">
