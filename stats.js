@@ -257,7 +257,9 @@
         contact: contactOf(r) || st[k].contact,
         date: dr,
         qui: f[F.qui] || "?",
-        notes: f[F.notes] || ""
+        notes: f[F.notes] || "",
+        type: estVente(r) ? "Vente" : "Setting",
+        source: st[k].source || f[F.source] || ""
       };
     });
     const relances = Object.values(relParProspect).sort((a, c) => a.date.localeCompare(c.date));
