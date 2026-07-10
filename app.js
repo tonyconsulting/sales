@@ -10,7 +10,7 @@ try {
 // Clé PUBLIQUE de signature des notifications (la privée est côté serveur)
 const VAPID_PUB = "BBefpGJrlJu2jhuahy0XnidzpnE5nfZ84kRh3YueXISXD036WLlbQu50vebuJcKKiF05xz5Cj_C__Qa8wc_YWNQ";
 
-let MOI = null, EQUIPE = [], RECORDS = [], RDVS = [], PERIOD = "7j", TYPE = "Setting", PLANFILTRE = "tous", VUEQUIPE = "toutes", PENDING_RDV = null, PENDING_PROSPECT = "";
+let MOI = null, EQUIPE = [], RECORDS = [], RDVS = [], PERIOD = "1j", TYPE = "Setting", PLANFILTRE = "tous", VUEQUIPE = "toutes", PENDING_RDV = null, PENDING_PROSPECT = "";
 const NOM_EQUIPE = { kelian: "Team Kélian", mila: "Team Mila" };
 const chipEquipe = e => (MOI && MOI.role === "admin" && e) ? `<span class="pill ${e === "mila" ? "teamM" : "teamK"}" title="${NOM_EQUIPE[e] || e}">${e === "mila" ? "M" : "K"}</span> ` : "";
 
@@ -754,10 +754,7 @@ async function init() {
   document.querySelectorAll("#nav button").forEach(b => b.addEventListener("click", () => { showPage(b.dataset.page); fermeTiroir(); }));
   document.querySelectorAll("#typeBtns button").forEach(b => b.addEventListener("click", () => setType(b.dataset.t)));
   ["inResSetting", "inCause", "inResVente"].forEach(i => el(i).addEventListener("change", majConditionnels));
-  document.querySelectorAll("#periodCtrls button[data-p]").forEach(b => b.addEventListener("click", () => {
-    document.querySelectorAll("#periodCtrls button[data-p]").forEach(x => x.classList.remove("active"));
-    b.classList.add("active"); PERIOD = b.dataset.p; render();
-  }));
+  el("periodSel").addEventListener("change", () => { PERIOD = el("periodSel").value; render(); });
   el("planMoi").addEventListener("click", () => { PLANFILTRE = "moi"; el("planMoi").classList.add("active"); el("planTous").classList.remove("active"); render(); });
   el("planTous").addEventListener("click", () => { PLANFILTRE = "tous"; el("planTous").classList.add("active"); el("planMoi").classList.remove("active"); render(); });
   el("refresh").addEventListener("click", loadData);
