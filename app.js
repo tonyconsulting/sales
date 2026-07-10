@@ -37,6 +37,11 @@ const PAGES = {
   kpi: ["KPI", "Analysez vos perfs"]
 };
 const ETAT_PILL = { "Closé": "", "À relancer": "amber", "RDV de vente": "", "Vu en setting": "grey", "Setting calé": "grey", "Perdu": "red", "Contacté": "grey" };
+// Options des menus « Résultat… » rapides (prospects + retards)
+const RES_Q_SETTING = ["No-show", "Non abouti", "RDV de vente calé"];
+const RES_Q_VENTE = ["Closé", "Pas closé", "No-show", "À relancer"];
+const quickresHTML = r => `<select class="quickres" data-rdv="${r.id}"><option value="">${r.type === "Setting" ? "Résultat du setting…" : "Résultat de la vente…"}</option>` +
+  (r.type === "Setting" ? RES_Q_SETTING : RES_Q_VENTE).map(o => `<option>${o}</option>`).join("") + `</select>`;
 
 const MAP = {
   type: "Type de call", date: "Date", qui: "Qui", telephone: "Téléphone",
@@ -148,8 +153,12 @@ function renderPlanning(today) {
           <input type="datetime-local" id="deph-${r.id}">
           <button class="abtn oui" data-act="rdv_deplace" data-id="${r.id}">Valider le nouvel horaire</button>
         </div>`;
-  const aLogger = mesConfirmes.filter(r => jourLocal(r.quand) <= today);
+  // Plus de 2 jours sans résultat -> section repliée « à régulariser »
+  // (comme le « masqué » du dashboard Mila : rien ne pourrit dans la vue)
+  const seuilRetard = new Date(Date.now() - 48 * 3600 * 1000).toISOString();
+  const aLogger = mesConfirmes.filter(r => jourLocal(r.quand) <= today && r.quand >= seuilRetard);
   const aVenir = mesConfirmes.filter(r => jourLocal(r.quand) > today);
+  const enRetard = mesConfirmes.filter(r => r.quand < seuilRetard);
   if (aLogger.length) {
     html += `<h2>À logger — l'appel est passé (ou c'est aujourd'hui)</h2>` + aLogger.map(r => `
       <div class="slot">
@@ -185,6 +194,15 @@ function renderPlanning(today) {
         <div class="setat">${etatTexte(r)}</div>
         <div class="abtns">${outilsSetter(r)}</div>
       </div>`).join("");
+  }
+  if (enRetard.length) {
+    html += `<details class="retard"><summary>En retard — à régulariser (${enRetard.length})</summary>` +
+      enRetard.map(r => `
+      <div class="slot grise">
+        <div class="stitre">${chipEquipe(r.equipe)}${esc(r.type)} · ${quandJoli(r.quand, today)} · ${esc(r.prospect)}</div>
+        <div class="sinfo">${slotInfo(r)} · pris par ${esc(r.assigne_a)} — résultat jamais loggé</div>
+        <div class="abtns">${quickresHTML(r)} ${outilsSetter(r)}</div>
+      </div>`).join("") + `</details>`;
   }
   el("aprendre").innerHTML = html || `<div class="empty">Rien pour l'instant. Les settings calés et les RDV de vente arrivent ici.</div>`;
   el("propositions").innerHTML = "";
@@ -345,11 +363,7 @@ function render() {
         [{ t: "Prospect" }, { t: "Contact" }, { t: "Source" }, { t: "État" }, { t: "" }, { t: "Dernier contact" }, { t: "Vendu", n: 1 }, { t: "Encaissé", n: 1 }],
         s.prospects.map(x => {
           const rp = rdvEchuDe(x);
-          const quick = rp
-            ? `<select class="quickres" data-rdv="${rp.id}"><option value="">${rp.type === "Setting" ? "Résultat du setting…" : "Résultat de la vente…"}</option>` +
-              (rp.type === "Setting" ? ["No-show", "Non abouti", "RDV de vente calé"] : ["Closé", "Pas closé", "No-show", "À relancer"])
-                .map(o => `<option>${o}</option>`).join("") + `</select>`
-            : "";
+          const quick = rp ? quickresHTML(rp) : "";
           return [
             { t: esc(x.nom || "?") }, { t: esc(x.contact) }, { t: esc(x.source || "–") },
             { t: `<span class="pill ${ETAT_PILL[x.etat] || ""}">${esc(x.etat)}</span>` },
@@ -358,10 +372,6 @@ function render() {
           ];
         }))
     : `<div class="empty">Aucun prospect identifié.</div>`;
-  document.querySelectorAll(".quickres").forEach(sel => sel.addEventListener("change", () => {
-    const r = RDVS.find(x => x.id === sel.dataset.rdv);
-    if (r && sel.value) prefillLog(r, sel.value);
-  }));
 
   const calls = recsVisibles().slice()
     .sort((a, c) => (SalesStats.dateOf(c) + (c.createdTime || "")).localeCompare(SalesStats.dateOf(a) + (a.createdTime || "")))
@@ -429,6 +439,12 @@ function render() {
     : `<div class="empty">Aucun call loggé sur la période.</div>`;
 
   renderPlanning(s.today);
+
+  // Menus « Résultat… » rapides (table prospects + retards du planning)
+  document.querySelectorAll(".quickres").forEach(sel => sel.addEventListener("change", () => {
+    const r = RDVS.find(x => x.id === sel.dataset.rdv);
+    if (r && sel.value) prefillLog(r, sel.value);
+  }));
 
   // Pastille de la cloche (mobile) : RDV à traiter + relances
   const nbPlan = el("bPlan").style.display === "none" ? 0 : (parseInt(el("bPlan").textContent, 10) || 0);
