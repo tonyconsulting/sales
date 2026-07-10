@@ -53,8 +53,9 @@
   .strip .value { font-size:22px; font-weight:700; }
   h2 { font-size:15px; margin:26px 0 12px; font-weight:650; }
 
+  .tscroll { overflow-x:auto; }
   table { width:100%; border-collapse:collapse; background:var(--cardbg); border:1px solid var(--line); border-radius:14px; overflow:hidden; }
-  th, td { text-align:left; padding:10px 13px; border-bottom:1px solid var(--line); font-size:13.5px; }
+  th, td { text-align:left; padding:10px 13px; border-bottom:1px solid var(--line); font-size:13.5px; white-space:nowrap; }
   th { background:#0e1312; color:var(--muted); font-weight:600; font-size:11.5px; text-transform:uppercase; letter-spacing:0.05em; }
   tr:last-child td { border-bottom:none; }
   td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }
@@ -72,7 +73,7 @@
   .del:hover { color:var(--bad); }
 
   .pipe { background:var(--cardbg); border:1px solid var(--line); border-radius:14px; padding:18px 20px; }
-  .pipe .row { display:grid; grid-template-columns:110px 1fr 46px; align-items:center; gap:14px; margin:11px 0; }
+  .pipe .row { display:grid; grid-template-columns:120px 1fr 46px; align-items:center; gap:14px; margin:11px 0; }
   .pipe .name { color:var(--muted); font-size:13px; }
   .pipe .eur { color:var(--muted); font-size:11px; }
   .pipe .bar { height:8px; border-radius:99px; background:#1a221f; overflow:hidden; }
@@ -99,7 +100,6 @@
   .bl { font-size:10px; color:var(--muted); }
   .foot { color:var(--muted); font-size:12px; margin-top:28px; line-height:1.6; }
 
-  /* Formulaire de log */
   .form { max-width:560px; }
   .types { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:18px; }
   .types button { border:1px solid var(--line); background:var(--cardbg); color:var(--ink); padding:12px 6px; border-radius:11px; cursor:pointer; font-size:13.5px; font-family:inherit; }
@@ -159,9 +159,9 @@
     <header>
       <div><h1 id="pageTitle">Log un call</h1><div class="sub" id="pageSub"></div></div>
       <div class="controls" id="periodCtrls">
-        <button data-p="mois" class="active">Ce mois</button>
-        <button data-p="mois-1">Mois dernier</button>
-        <button data-p="7j">7 jours</button>
+        <button data-p="1j">Aujourd'hui</button>
+        <button data-p="7j" class="active">7 jours</button>
+        <button data-p="30j">30 jours</button>
         <button data-p="tout">Tout</button>
         <button id="refresh">Rafraîchir</button>
       </div>
@@ -174,7 +174,7 @@
       <form class="form" id="logForm" autocomplete="off">
         <div class="types" id="typeBtns">
           <button type="button" data-t="Setting" class="active">Setting</button>
-          <button type="button" data-t="Présentation">Présentation</button>
+          <button type="button" data-t="Prez">Prez</button>
           <button type="button" data-t="Closing">Closing</button>
           <button type="button" data-t="Paiement">Paiement</button>
         </div>
@@ -188,64 +188,100 @@
           <div class="field"><label>Source</label>
             <select id="inSource"><option value=""></option><option>Contenu Instagram</option><option>Contenu TikTok</option><option>Recommandation</option><option>Autre</option></select>
           </div>
-          <div class="field"><label>Date du call</label><input type="date" id="inDate"></div>
+          <div class="field"><label>Date</label><input type="date" id="inDate"></div>
         </div>
 
         <div data-only="Setting">
           <div class="field"><label>Résultat du setting *</label>
-            <select id="inResSetting"><option value=""></option><option>RDV posé</option><option>Non qualifié</option><option>Pas répondu</option><option>À rappeler</option></select>
+            <select id="inResSetting">
+              <option value=""></option>
+              <option>Calé (à venir)</option>
+              <option>No-show</option>
+              <option>Non abouti</option>
+              <option>Part en prez</option>
+              <option>Part en closing</option>
+            </select>
           </div>
-          <div id="rdvBlock" style="display:none">
+          <div id="caleBlock" style="display:none">
+            <div class="field"><label>Quand ?</label><input type="datetime-local" id="inCaleLe"></div>
+          </div>
+          <div id="causeBlock" style="display:none">
+            <div class="field"><label>Cause *</label>
+              <select id="inCause"><option value=""></option><option>Pas intéressé</option><option>Pas le budget</option><option>Non qualifié</option><option>À rappeler</option><option>Autre</option></select>
+            </div>
+            <div class="field" id="rappelBlock" style="display:none"><label>À rappeler le</label><input type="date" id="inDateRappel"></div>
+          </div>
+          <div id="suiteBlock" style="display:none">
             <div class="row2">
-              <div class="field"><label>RDV prévu le</label><input type="datetime-local" id="inRdvLe"></div>
-              <div class="field"><label>RDV avec</label><select id="inRdvAvec"></select></div>
+              <div class="field"><label>Quand ?</label><input type="datetime-local" id="inSuiteLe"></div>
+              <div class="field"><label>Avec qui ?</label><select id="inRdvAvec"></select></div>
             </div>
             <div class="field"><label>Fiche prospect (objectif, budget, objection probable)</label><textarea id="inFiche"></textarea></div>
           </div>
         </div>
 
-        <div data-only="Présentation" style="display:none">
-          <div class="field"><label>Résultat de la présentation *</label>
-            <select id="inResPres"><option value=""></option><option>Passe en closing</option><option>No-show</option><option>Pas intéressé</option><option>À relancer</option></select>
+        <div data-only="Prez" style="display:none">
+          <div class="field"><label>Résultat de la prez *</label>
+            <select id="inResPres"><option value=""></option><option>Closé</option><option>Pas closé</option><option>No-show</option><option>À relancer</option></select>
           </div>
+          <div id="closePBlock" style="display:none">
+            <div class="row2">
+              <div class="field"><label>Offre</label><select id="inOffreP"><option value=""></option><option>Accompagnement</option><option>Autre</option></select></div>
+              <div class="field"><label>Paiement</label><select id="inPaiementP"><option value=""></option><option>Comptant</option><option>Acompte</option></select></div>
+            </div>
+            <div class="row2">
+              <div class="field"><label>Montant total (€)</label><input type="number" id="inMontantP" min="0" step="1"></div>
+              <div class="field"><label>Encaissé aujourd'hui (€)</label><input type="number" id="inEncaisseP" min="0" step="1"></div>
+            </div>
+          </div>
+          <div class="field" id="causePBlock" style="display:none"><label>Cause *</label>
+            <select id="inCauseP"><option value=""></option><option>Pas intéressé</option><option>Pas le budget</option><option>Réfléchit</option><option>Autre</option></select>
+          </div>
+          <div class="field" id="relancePBlock" style="display:none"><label>À relancer le</label><input type="date" id="inDateRelanceP"></div>
         </div>
 
         <div data-only="Closing" style="display:none">
           <div class="field"><label>Résultat du closing *</label>
             <select id="inResClosing"><option value=""></option><option>Closé</option><option>Pas closé</option><option>No-show</option><option>À relancer</option></select>
           </div>
-          <div class="row2">
-            <div class="field"><label>Offre vendue</label><select id="inOffre"><option value=""></option><option>Accompagnement</option><option>Autre</option></select></div>
-            <div class="field"><label>Type de paiement</label><select id="inPaiement"><option value=""></option><option>Comptant</option><option>2x</option><option>3x</option><option>Acompte</option></select></div>
+          <div id="closeCBlock" style="display:none">
+            <div class="row2">
+              <div class="field"><label>Offre</label><select id="inOffreC"><option value=""></option><option>Accompagnement</option><option>Autre</option></select></div>
+              <div class="field"><label>Paiement</label><select id="inPaiementC"><option value=""></option><option>Comptant</option><option>Acompte</option></select></div>
+            </div>
+            <div class="row2">
+              <div class="field"><label>Montant total (€)</label><input type="number" id="inMontantC" min="0" step="1"></div>
+              <div class="field"><label>Encaissé aujourd'hui (€)</label><input type="number" id="inEncaisseC" min="0" step="1"></div>
+            </div>
           </div>
-          <div class="row2">
-            <div class="field"><label>Montant total (€)</label><input type="number" id="inMontant" min="0" step="1"></div>
-            <div class="field"><label>Encaissé aujourd'hui (€)</label><input type="number" id="inEncaisse" min="0" step="1"></div>
+          <div class="field" id="causeCBlock" style="display:none"><label>Cause *</label>
+            <select id="inCauseC"><option value=""></option><option>Pas intéressé</option><option>Pas le budget</option><option>Réfléchit</option><option>Autre</option></select>
           </div>
-          <div class="field" id="relanceBlock" style="display:none"><label>Date de relance</label><input type="date" id="inDateRelance"></div>
+          <div class="field" id="relanceCBlock" style="display:none"><label>À relancer le</label><input type="date" id="inDateRelanceC"></div>
         </div>
 
         <div data-only="Paiement" style="display:none">
-          <div class="row2">
-            <div class="field"><label>Encaissé aujourd'hui (€) *</label><input type="number" id="inEncaissePmt" min="0" step="1"></div>
-            <div class="field"><label>Type de paiement</label><select id="inPaiementPmt"><option value=""></option><option>Comptant</option><option>2x</option><option>3x</option><option>Acompte</option></select></div>
-          </div>
+          <div class="field"><label>Encaissé aujourd'hui (€) *</label><input type="number" id="inEncaissePmt" min="0" step="1"></div>
         </div>
 
         <div class="field"><label>Notes</label><textarea id="inNotes"></textarea></div>
-        <button class="submit" id="submitBtn" type="submit">Enregistrer le call</button>
+        <button class="submit" id="submitBtn" type="submit">Enregistrer</button>
       </form>
     </section>
 
     <section class="page" id="page-dashboard">
       <div class="grid3">
-        <div class="card kpi"><div class="label">RDV posés hier</div><div class="value" id="k1">–</div><div class="hint" id="k1h"></div></div>
-        <div class="card kpi"><div class="label">Encaissé ce mois</div><div class="value" id="k2">–</div><div class="hint" id="k2h"></div></div>
-        <div class="card kpi"><div class="label">Relances à faire aujourd'hui</div><div class="value" id="k3">–</div><div class="hint" id="k3h"></div></div>
+        <div class="card kpi"><div class="label">RDV aujourd'hui</div><div class="value" id="k1">–</div><div class="hint">settings, prez et closings calés</div></div>
+        <div class="card kpi"><div class="label">Encaissé (30 jours)</div><div class="value" id="k2">–</div><div class="hint">prez + closings + soldes</div></div>
+        <div class="card kpi"><div class="label">Relances à faire</div><div class="value" id="k3">–</div><div class="hint" id="k3h"></div></div>
       </div>
       <div class="strip" id="strip"></div>
+      <h2>Causes de non-aboutissement (période)</h2>
+      <div id="causes"></div>
+      <h2>Reste à encaisser (acomptes non soldés)</h2>
+      <div id="reste"></div>
       <h2>RDV du jour</h2>
-      <div id="rdvjour"></div>
+      <div class="tscroll" id="rdvjour"></div>
     </section>
 
     <section class="page" id="page-pipeline">
@@ -254,22 +290,20 @@
       <div class="kanban" id="kanban"></div>
     </section>
 
-    <section class="page" id="page-prospects"><div id="prospectsT"></div></section>
-    <section class="page" id="page-rdv"><div id="rdv"></div></section>
-    <section class="page" id="page-appels"><div id="appels"></div></section>
-    <section class="page" id="page-relances"><div id="relances"></div></section>
+    <section class="page" id="page-prospects"><div class="tscroll" id="prospectsT"></div></section>
+    <section class="page" id="page-rdv"><div class="tscroll" id="rdv"></div></section>
+    <section class="page" id="page-appels"><div class="tscroll" id="appels"></div></section>
+    <section class="page" id="page-relances"><div class="tscroll" id="relances"></div></section>
 
     <section class="page" id="page-kpi">
       <div class="charts" id="charts"></div>
       <h2>Par personne (période sélectionnée)</h2>
-      <div id="people"></div>
-      <h2>Par source</h2>
-      <div id="sources"></div>
+      <div class="tscroll" id="people"></div>
     </section>
 
     <div class="foot">
-      Show-up, pipeline et « closé par source » sont rapprochés par Instagram (ou téléphone à défaut).
-      L'encaissé additionne les closings et les paiements (échéances 2x/3x, virements reçus plus tard).
+      Les prospects sont reliés par Instagram (ou téléphone à défaut) : remplissez-le à chaque call.
+      L'encaissé additionne prez, closings et soldes d'acomptes.
     </div>
   </main>
 </div>
