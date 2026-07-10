@@ -34,7 +34,8 @@ const PAGES = {
   planning: ["Planning", "Les RDV à prendre et l'emploi du temps"],
   appels: ["Appels", "Les 100 derniers calls loggés"],
   relances: ["Relances", "Les follow-ups à faire"],
-  kpi: ["KPI", "Analysez vos perfs"]
+  kpi: ["KPI", "Analysez vos perfs"],
+  reglages: ["Réglages", "Rappels automatiques avant les RDV"]
 };
 const ETAT_PILL = { "Closé": "", "À relancer": "amber", "RDV de vente": "", "Vu en setting": "grey", "Setting calé": "grey", "Perdu": "red", "Contacté": "grey" };
 // Options des menus « Résultat… » rapides (prospects + retards)
@@ -331,11 +332,6 @@ function render() {
     ? tableHTML([{ t: "Cause" }, { t: "Settings", n: 1 }], causesArr.map(([c, n]) => [{ t: esc(c) }, { t: n, n: 1 }]))
     : `<div class="empty">Aucun setting non abouti sur la période.</div>`;
 
-  el("reste").innerHTML = s.reste.liste.length
-    ? tableHTML([{ t: "Prospect" }, { t: "Contact" }, { t: "Reste dû", n: 1 }],
-        s.reste.liste.map(x => [{ t: esc(x.prospect) }, { t: esc(x.contact) }, { t: eur(x.du), n: 1 }]))
-      .replace("<table>", `<table><tr><th colspan="2">TOTAL</th><th class="num">${eur(s.reste.total)}</th></tr>`)
-    : `<div class="empty">Aucun acompte en attente de solde.</div>`;
 
   const pi = s.pipeline;
   const maxPi = Math.max(pi.contacte, pi.cale, pi.vu, pi.enVente, pi.aRelancer, pi.close, pi.perdu, 1);
@@ -419,13 +415,23 @@ function render() {
 
   el("relances").innerHTML = s.relances.length
     ? tableHTML(
-        [{ t: "Pour le" }, { t: "Prospect" }, { t: "Contact" }, { t: "Qui" }, { t: "Notes" }],
+        [{ t: "Pour le" }, { t: "Prospect" }, { t: "Contact" }, { t: "Source" }, { t: "Qui" }, { t: "Notes" }, { t: "" }],
         s.relances.map(r => [
           { t: r.date < s.today ? `<span class="late">${esc(r.date)}</span>` : esc(r.date) },
-          { t: esc(r.prospect) }, { t: esc(r.contact) }, { t: esc(r.qui) },
-          { t: r.notes ? `<details><summary>voir</summary><div>${esc(r.notes)}</div></details>` : "" }
+          { t: esc(r.prospect) }, { t: esc(r.contact) }, { t: esc(r.source || "–") }, { t: esc(r.qui) },
+          { t: r.notes ? `<details><summary>voir</summary><div>${esc(r.notes)}</div></details>` : "" },
+          { t: `<button class="abtn oui rel-log" data-nom="${esc(r.prospect)}" data-contact="${esc(r.contact)}" data-type="${r.type === "Vente" ? "Vente" : "Setting"}" data-source="${esc(r.source || "")}">Log le résultat</button>` }
         ]))
     : `<div class="empty">Aucune relance en attente.</div>`;
+  document.querySelectorAll(".rel-log").forEach(b => b.addEventListener("click", () => {
+    showPage("log"); resetForm(); setType(b.dataset.type);
+    el("inProspect").value = b.dataset.nom === "?" ? "" : b.dataset.nom;
+    if (String(b.dataset.contact).startsWith("@")) el("inInsta").value = b.dataset.contact;
+    if (b.dataset.source) el("inSource").value = b.dataset.source;
+    el("toast").textContent = "Pré-rempli pour la relance de " + (b.dataset.nom || "?") + " — choisis le résultat et enregistre.";
+    el("toast").style.display = "block";
+    setTimeout(() => { el("toast").style.display = "none"; }, 5000);
+  }));
 
   const wk = s.hebdo;
   const chart = (title, vals, fmt) => {
@@ -481,7 +487,8 @@ function showPage(id) {
   el("pageTitle").textContent = PAGES[id][0];
   el("pageSub").textContent = PAGES[id][1];
   el("topTitre").textContent = PAGES[id][0];
-  el("periodCtrls").style.display = (id === "log" || id === "planning") ? "none" : "";
+  el("periodCtrls").style.display = (id === "log" || id === "planning" || id === "reglages") ? "none" : "";
+  if (id === "reglages") chargeRappels();
 }
 // Tiroir de navigation (mobile)
 function fermeTiroir() {
@@ -641,8 +648,8 @@ async function submitForm(e) {
   const c = { type: TYPE, prospect: el("inProspect").value.trim() };
   if (!c.prospect) return alert("Le prospect est obligatoire.");
   c.instagram = el("inInsta").value.trim();
-  if (!c.instagram && (TYPE === "Paiement" || (TYPE === "Vente" && el("inResVente").value === "Closé"))) {
-    if (!confirm("Pas d'Instagram : ce call ne sera pas relié à la fiche du prospect (le reste à encaisser ne suivra pas). Enregistrer quand même ?")) return;
+  if (!c.instagram && TYPE === "Vente" && el("inResVente").value === "Closé") {
+    if (!confirm("Pas d'Instagram : cette vente ne sera pas reliée à la fiche du prospect. Enregistrer quand même ?")) return;
   }
   c.source = el("inSource").value;
   c.date = el("inDate").value || todayLocal();
@@ -685,13 +692,11 @@ async function submitForm(e) {
     c.qui = el("inQuiClose").value;
     if (c.res_closing === "Closé") {
       c.offre = el("inOffreV").value;
-      c.paiement = el("inPaiementV").value;
       if (!el("inMontantV").value) return alert("Indique le montant total de la vente.");
       c.montant = Number(el("inMontantV").value);
-      if (el("inEncaisseV").value) c.encaisse = Number(el("inEncaisseV").value);
-      if (c.encaisse === undefined && c.paiement === "Comptant") c.encaisse = c.montant; // comptant = payé en entier
-      if ((c.encaisse || 0) > c.montant &&
-          !confirm("Encaissé (" + c.encaisse + " €) supérieur au montant total (" + c.montant + " €). Enregistrer quand même ?")) return;
+      // Plus d'acomptes (10/07) : tout est comptant, l'encaissé = le montant
+      c.paiement = "Comptant";
+      c.encaisse = c.montant;
     }
     if (c.res_closing === "Pas closé") c.cause = el("inCauseV").value;
     if (c.res_closing === "À relancer") {
@@ -700,11 +705,6 @@ async function submitForm(e) {
       if (el("inMontantRelV").value) c.montant = Number(el("inMontantRelV").value);
     }
     if (PENDING_RDV && TYPE === PENDING_TYPE && cleTxt(c.prospect) === cleTxt(PENDING_PROSPECT)) c.rdv_id = PENDING_RDV;
-  }
-  if (TYPE === "Paiement") {
-    if (!el("inEncaissePmt").value) return alert("Le montant encaissé est obligatoire.");
-    c.encaisse = Number(el("inEncaissePmt").value);
-    c.paiement = "Solde";
   }
   el("submitBtn").disabled = true;
   el("submitBtn").textContent = "Enregistrement…";
@@ -725,6 +725,49 @@ async function submitForm(e) {
     el("submitBtn").disabled = false;
     el("submitBtn").textContent = "Enregistrer";
   }
+}
+
+// ----- Réglages (admin) : rappels automatiques -----
+const CIBLE_LABEL = { assigne: "À celui qui a le RDV", setter: "Au setter", admin: "À toi (admin)" };
+async function chargeRappels() {
+  const z = el("rappelsZone");
+  z.innerHTML = `<div class="empty">Chargement…</div>`;
+  try {
+    const d = await call("rappels_list");
+    const rows = d.rappels || [];
+    z.innerHTML = `<div class="sinfo" style="margin-bottom:14px;color:var(--muted)">Notifications envoyées automatiquement avant chaque RDV (vérification toutes les 5 minutes). Balises utilisables dans le message : {prospect} {heure} {type} {insta}</div>` +
+      rows.map(g => `
+      <div class="slot" data-rid="${g.id}">
+        <div class="stitre">${CIBLE_LABEL[g.cible] || esc(g.cible)}${g.seulement_statut === "ouvert" ? " — seulement si le RDV n'a pas de preneur" : ""}</div>
+        <div class="row2">
+          <div class="field"><label>Minutes avant le RDV (240 = 4 h)</label><input type="number" min="1" class="rg-delai" value="${g.delai_min}"></div>
+          <div class="field"><label>État</label><select class="rg-actif"><option value="oui"${g.actif ? " selected" : ""}>Actif</option><option value="non"${g.actif ? "" : " selected"}>Coupé</option></select></div>
+        </div>
+        <div class="field"><label>Message</label><textarea class="rg-msg">${esc(g.message)}</textarea></div>
+        <div class="abtns"><button class="abtn oui rg-save">Enregistrer</button></div>
+      </div>`).join("") +
+      `<div class="abtns" style="margin-top:6px"><button class="abtn" id="rgAjout">Ajouter un rappel</button></div>`;
+    z.querySelectorAll(".rg-save").forEach(b => b.addEventListener("click", async () => {
+      const sl = b.closest(".slot");
+      b.textContent = "Enregistrement…";
+      try {
+        await call("rappels_save", { rappel: {
+          id: sl.dataset.rid,
+          delai_min: Number(sl.querySelector(".rg-delai").value),
+          actif: sl.querySelector(".rg-actif").value === "oui",
+          message: sl.querySelector(".rg-msg").value
+        } });
+        b.textContent = "Enregistré";
+        setTimeout(() => { b.textContent = "Enregistrer"; }, 2000);
+      } catch (e) { alert(e.message); b.textContent = "Enregistrer"; }
+    }));
+    el("rgAjout").addEventListener("click", async () => {
+      try {
+        await call("rappels_save", { rappel: { delai_min: 60, message: "Dans 1 h : {type} avec {prospect} à {heure}.", actif: true, cible: "assigne" } });
+        chargeRappels();
+      } catch (e) { alert(e.message); }
+    });
+  } catch (e) { z.innerHTML = `<div class="empty">Impossible de charger : ${esc(e.message)}</div>`; }
 }
 
 // ----- Notifications push -----
@@ -843,6 +886,7 @@ async function init() {
   el("inQuiPres").innerHTML = optsMoi;
   el("inQuiClose").innerHTML = optsMoi;
   if (MOI.role === "admin") {
+    el("navReglages").style.display = "";
     el("fQuiAdmin").style.display = "";
     el("inQui").innerHTML = EQUIPE.map(m => `<option${m.nom === MOI.nom ? " selected" : ""}>${esc(m.nom)}</option>`).join("");
     el("vueEquipe").style.display = "";
