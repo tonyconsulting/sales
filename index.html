@@ -225,6 +225,7 @@
       <button data-page="appels"><span class="nlab"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 2 .8 2.9a2 2 0 0 1-.5 2.1L8.1 10a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.5c.9.4 1.9.7 2.9.8a2 2 0 0 1 1.6 2Z"/></svg>Appels</span></button>
       <button data-page="relances"><span class="nlab"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>Relances</span> <span class="badge red" id="bRel" style="display:none"></span></button>
       <button data-page="kpi"><span class="nlab"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M7 21V10M12 21V4M17 21v-7"/></svg>KPI</span></button>
+      <button data-page="reglages" id="navReglages" style="display:none"><span class="nlab"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.09a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.09a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1Z"/></svg>Réglages</span></button>
     </nav>
     <div class="aside-foot">Un call pas loggé est un call qui n'existe pas. Instagram du prospect à chaque fois.
       <div class="userbox" id="userbox" style="display:none">
@@ -262,10 +263,9 @@
     <section class="page" id="page-log">
       <div class="toast" id="toast">Call enregistré.</div>
       <form class="form" id="logForm" autocomplete="off">
-        <div class="types" id="typeBtns" style="grid-template-columns:repeat(3,1fr)">
+        <div class="types" id="typeBtns" style="grid-template-columns:repeat(2,1fr)">
           <button type="button" data-t="Setting" class="active">Setting</button>
           <button type="button" data-t="Vente">Vente (prez + closing)</button>
-          <button type="button" data-t="Paiement">Paiement</button>
         </div>
         <div class="field" id="fQuiAdmin" style="display:none"><label>Qui (admin)</label><select id="inQui"></select></div>
         <div class="field" id="fEquipeAdmin" style="display:none"><label>Équipe (car ce membre n'en a pas)</label>
@@ -321,11 +321,7 @@
           <div id="closeVBlock" style="display:none">
             <div class="row2">
               <div class="field"><label>Offre</label><select id="inOffreV"><option value=""></option><option>Accompagnement</option><option>Autre</option></select></div>
-              <div class="field"><label>Paiement</label><select id="inPaiementV"><option value=""></option><option>Comptant</option><option>Acompte</option></select></div>
-            </div>
-            <div class="row2">
-              <div class="field"><label>Montant total (€) *</label><input type="number" id="inMontantV" min="0" step="1"></div>
-              <div class="field"><label>Encaissé aujourd'hui (€)</label><input type="number" id="inEncaisseV" min="0" step="1"></div>
+              <div class="field"><label>Montant de la vente (€) *</label><input type="number" id="inMontantV" min="0" step="1"></div>
             </div>
           </div>
           <div class="field" id="causeVBlock" style="display:none"><label>Cause *</label>
@@ -335,10 +331,6 @@
             <div class="field"><label>À relancer le *</label><input type="date" id="inDateRelanceV"></div>
             <div class="field"><label>Montant discuté (€)</label><input type="number" id="inMontantRelV" min="0" step="1"></div>
           </div></div>
-        </div>
-
-        <div data-only="Paiement" style="display:none">
-          <div class="field"><label>Encaissé aujourd'hui (€) *</label><input type="number" id="inEncaissePmt" min="0" step="1"></div>
         </div>
 
         <div class="field"><label>Notes</label><textarea id="inNotes"></textarea></div>
@@ -354,7 +346,7 @@
         </div>
         <div class="card kpi">
           <div class="itile">€</div>
-          <div class="label">Encaissé (30 jours)</div><div class="value" id="k2">–</div><div class="hint">ventes + soldes d'acomptes</div>
+          <div class="label">Encaissé (30 jours)</div><div class="value" id="k2">–</div><div class="hint">ventes closées</div>
         </div>
         <div class="card kpi warn">
           <div class="itile warn"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg></div>
@@ -364,8 +356,6 @@
       <div class="strip" id="strip"></div>
       <h2>Causes de non-aboutissement (période)</h2>
       <div id="causes"></div>
-      <h2>Reste à encaisser (acomptes non soldés)</h2>
-      <div id="reste"></div>
       <h2>RDV du jour</h2>
       <div class="tscroll" id="rdvjour"></div>
     </section>
@@ -392,6 +382,8 @@
     <section class="page" id="page-appels"><div class="tscroll" id="appels"></div></section>
     <section class="page" id="page-relances"><div class="tscroll" id="relances"></div></section>
 
+    <section class="page" id="page-reglages"><div id="rappelsZone"></div></section>
+
     <section class="page" id="page-kpi">
       <div class="charts" id="charts"></div>
       <h2>Par personne (période sélectionnée)</h2>
@@ -400,7 +392,6 @@
 
     <div class="foot">
       Les prospects sont reliés par Instagram (ou téléphone à défaut) : remplissez-le à chaque call.
-      L'encaissé additionne les ventes et les soldes d'acomptes.
     </div>
   </main>
 </div>
