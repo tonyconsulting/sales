@@ -1,6 +1,14 @@
 // Front du site sales — parle uniquement à l'edge function (aucune clé ici).
 const API = "https://gwococcxzrrtadtricnd.supabase.co/functions/v1/api";
-const CODE = new URLSearchParams(location.search).get("c") || "";
+// Le code perso est mémorisé : le site marche aussi ouvert sans ?c=
+// (indispensable pour la version « écran d'accueil » iPhone).
+let CODE = new URLSearchParams(location.search).get("c") || "";
+try {
+  if (CODE) localStorage.setItem("sales_code", CODE);
+  else CODE = localStorage.getItem("sales_code") || "";
+} catch (_) {}
+// Clé PUBLIQUE de signature des notifications (la privée est côté serveur)
+const VAPID_PUB = "BBefpGJrlJu2jhuahy0XnidzpnE5nfZ84kRh3YueXISXD036WLlbQu50vebuJcKKiF05xz5Cj_C__Qa8wc_YWNQ";
 
 let MOI = null, EQUIPE = [], RECORDS = [], RDVS = [], PERIOD = "7j", TYPE = "Setting", PLANFILTRE = "tous", VUEQUIPE = "toutes", PENDING_RDV = null, PENDING_PROSPECT = "";
 const NOM_EQUIPE = { kelian: "Team Kélian", mila: "Team Mila" };
@@ -603,6 +611,48 @@ async function submitForm(e) {
   }
 }
 
+// ----- Notifications push -----
+function b64ToU8(s) {
+  const pad = "=".repeat((4 - s.length % 4) % 4);
+  const b = atob((s + pad).replace(/-/g, "+").replace(/_/g, "/"));
+  return Uint8Array.from(b, c => c.charCodeAt(0));
+}
+async function initNotifs() {
+  const zone = el("notifZone");
+  const iOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+  const standalone = (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) || navigator.standalone === true;
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+    zone.innerHTML = (iOS && !standalone)
+      ? `<div class="slot"><div class="stitre">Recevoir les RDV en notification</div>
+         <div class="sinfo">Sur iPhone : bouton Partager de Safari → « Sur l'écran d'accueil ». Ouvre ensuite Sales depuis la nouvelle icône et reviens ici pour activer les notifications.</div></div>`
+      : "";
+    return;
+  }
+  let reg;
+  try { reg = await navigator.serviceWorker.register("sw.js"); }
+  catch (_) { zone.innerHTML = ""; return; }
+  const sub = await reg.pushManager.getSubscription();
+  if (sub && Notification.permission === "granted") {
+    call("push_subscribe", { sub: sub.toJSON() }).catch(() => {});
+    zone.innerHTML = `<div class="sinfo" style="margin-bottom:14px;color:var(--muted)">Notifications activées sur cet appareil.</div>`;
+    return;
+  }
+  zone.innerHTML = `<div class="slot">
+    <div class="stitre">Sois prévenu quand un RDV arrive pour toi</div>
+    <div class="sinfo">Une notification sur ce téléphone dès qu'un RDV de vente est à prendre, décalé ou confirmé.</div>
+    <div class="abtns"><button class="abtn oui" id="btnNotifs">Activer les notifications</button></div>
+  </div>`;
+  el("btnNotifs").addEventListener("click", async () => {
+    try {
+      const perm = await Notification.requestPermission();
+      if (perm !== "granted") return alert("Les notifications sont bloquées dans les réglages du navigateur.");
+      const s = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToU8(VAPID_PUB) });
+      await call("push_subscribe", { sub: s.toJSON() });
+      initNotifs();
+    } catch (e) { alert("Activation impossible : " + e.message); }
+  });
+}
+
 async function loadData() {
   try {
     const d = await call("data");
@@ -668,6 +718,7 @@ async function init() {
   el("planTous").addEventListener("click", () => { PLANFILTRE = "tous"; el("planTous").classList.add("active"); el("planMoi").classList.remove("active"); render(); });
   el("refresh").addEventListener("click", loadData);
   el("logForm").addEventListener("submit", submitForm);
+  initNotifs().catch(() => {});
   await loadData();
   setInterval(() => { if (document.visibilityState === "visible") loadData(); }, 10 * 60 * 1000);
 }
