@@ -258,7 +258,9 @@ function render() {
     ["Taux de closing", fmtPct(g.txClose)],
     ["Vendu", eur(g.vendu)],
     ["Encaissé", eur(g.encaisse)],
-    ["Panier moyen", g.panier === null ? "–" : eur(g.panier)]
+    ["Panier moyen", g.panier === null ? "–" : eur(g.panier)],
+    ["Délai calé → setting", s.delais.setting.moy === null ? "–" : s.delais.setting.moy + " j"],
+    ["Délai calé → vente", s.delais.vente.moy === null ? "–" : s.delais.vente.moy + " j"]
   ].map(([l, v]) => `<div class="card"><div class="label">${l}</div><div class="value">${v}</div></div>`).join("");
 
   const causesArr = Object.entries(g.causes).sort((a, c) => c[1] - a[1]);
