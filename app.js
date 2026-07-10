@@ -2,22 +2,26 @@
 const API = "https://gwococcxzrrtadtricnd.supabase.co/functions/v1/api";
 const CODE = new URLSearchParams(location.search).get("c") || "";
 
-let MOI = null, EQUIPE = [], RECORDS = [], PERIOD = "7j", TYPE = "Setting";
+let MOI = null, EQUIPE = [], RECORDS = [], RDVS = [], PERIOD = "7j", TYPE = "Setting", PLANFILTRE = "tous";
 
 const el = id => document.getElementById(id);
 const eur = n => (Number(n) || 0).toLocaleString("fr-FR") + " €";
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const fmtPct = v => v === null || v === undefined ? "–" : v + " %";
+const pad = n => n < 10 ? "0" + n : "" + n;
 const JOURS = ["dim.", "lun.", "mar.", "mer.", "jeu.", "ven.", "sam."];
 const jolieDate = (ymd, today) => ymd === today ? "aujourd'hui" :
   JOURS[new Date(ymd + "T12:00:00").getDay()] + " " + ymd.slice(8, 10) + "/" + ymd.slice(5, 7);
+const jourLocal = iso => SalesStats.ymdLocal(new Date(iso));
+const heureLocale = iso => { const d = new Date(iso); return pad(d.getHours()) + ":" + pad(d.getMinutes()); };
+const quandJoli = (iso, today) => jolieDate(jourLocal(iso), today) + " à " + heureLocale(iso);
 
 const PAGES = {
   log: ["Log un call", "Après chaque call, 20 secondes"],
   dashboard: ["Dashboard", "Vue d'ensemble"],
   pipeline: ["Pipeline", "Suivez vos deals"],
   prospects: ["Prospects", "Tous les prospects identifiés"],
-  rdv: ["Rendez-vous", "Settings, prez et closings calés"],
+  planning: ["Planning", "Les RDV à prendre et l'emploi du temps"],
   appels: ["Appels", "Les 100 derniers calls loggés"],
   relances: ["Relances", "Les follow-ups à faire"],
   kpi: ["KPI", "Analysez vos perfs"]
@@ -39,6 +43,13 @@ function adapt(row) {
   return { fields: f, createdTime: row.created_at, id: row.id };
 }
 
+function roleMatchFront(type, roleVente) {
+  const r = String(roleVente || "");
+  if (type === "Prez") return r.includes("presentateur") || r.includes("présentateur") || r.includes("closer");
+  if (type === "Closing") return r.includes("closer");
+  return false;
+}
+
 async function call(action, extra) {
   const res = await fetch(API, {
     method: "POST",
@@ -56,17 +67,143 @@ function tableHTML(headers, rows) {
     rows.map(r => "<tr>" + r.map(c => `<td class="${c.n ? "num" : ""}">${c.t}</td>`).join("") + "</tr>").join("") + "</table>";
 }
 
+// ----- Planning / dispatch -----
+function slotInfo(r) {
+  const bits = [];
+  bits.push("Prospect : " + esc(r.prospect) + (r.instagram ? " (" + esc(r.instagram) + ")" : r.telephone ? " (" + esc(r.telephone) + ")" : ""));
+  bits.push("setter : " + esc(r.setter));
+  if (r.source) bits.push(esc(r.source));
+  return bits.join(" · ");
+}
+function etatTexte(r) {
+  if (r.statut === "propose") return "En attente de " + esc(r.assigne_a) + " (référent)";
+  if (r.statut === "ouvert") return "Ouvert — premier " + (r.type === "Prez" ? "présentateur/closer" : "closer") + " qui accepte le prend";
+  if (r.statut === "decale") return "Décalage proposé par " + esc(r.proposition_par) + " (" + quandJoli(r.proposition, SalesStats.ymdLocal(new Date())) + ") — en attente du setter";
+  return "";
+}
+
+function renderPlanning(today) {
+  const moi = MOI.nom, admin = MOI.role === "admin";
+  const actifs = RDVS.filter(r => r.statut !== "annule");
+  const nonConfirmes = actifs.filter(r => r.statut !== "confirme");
+
+  const pourMoi = nonConfirmes.filter(r =>
+    (r.statut === "propose" && r.assigne_a === moi) ||
+    (r.statut === "ouvert" && roleMatchFront(r.type, MOI.role_vente) && !(r.refusee_par || []).includes(moi) && r.setter !== moi));
+  const propositions = actifs.filter(r => r.statut === "decale" && (admin || r.setter === moi));
+  const enAttente = nonConfirmes.filter(r => !pourMoi.includes(r) && !propositions.includes(r));
+
+  el("bPlan").style.display = (pourMoi.length + propositions.length) ? "" : "none";
+  el("bPlan").textContent = pourMoi.length + propositions.length;
+
+  const ficheHTML = r => r.fiche ? `<details style="margin-bottom:10px"><summary>fiche prospect</summary><div>${esc(r.fiche)}</div></details>` : "";
+  const outilsSetter = r => (admin || r.setter === moi)
+    ? (r.statut === "propose" ? `<button class="abtn" data-act="rdv_ouvre" data-id="${r.id}">Ouvrir à tous</button>` : "") +
+      `<button class="abtn non" data-act="rdv_annule" data-id="${r.id}">Annuler</button>`
+    : "";
+
+  let html = "";
+  if (pourMoi.length) {
+    html += `<h2>À prendre — c'est pour toi</h2>` + pourMoi.map(r => `
+      <div class="slot">
+        <div class="stitre">${esc(r.type)} · ${quandJoli(r.quand, today)}</div>
+        <div class="sinfo">${slotInfo(r)}</div>
+        ${ficheHTML(r)}
+        <div class="abtns">
+          <button class="abtn oui" data-act="rdv_accept" data-id="${r.id}">Je le prends</button>
+          <button class="abtn non" data-act="rdv_refuse" data-id="${r.id}">Pas dispo</button>
+          <button class="abtn" data-act="toggle-decale" data-id="${r.id}">Proposer un autre horaire</button>
+        </div>
+        <div class="decale-inline" id="dec-${r.id}">
+          <input type="datetime-local" id="dech-${r.id}">
+          <button class="abtn oui" data-act="rdv_propose" data-id="${r.id}">Envoyer la proposition</button>
+        </div>
+      </div>`).join("");
+  }
+  if (propositions.length) {
+    html += `<h2>Propositions de décalage à valider (vérifie avec le prospect)</h2>` + propositions.map(r => `
+      <div class="slot">
+        <div class="stitre">${esc(r.type)} · ${esc(r.prospect)}</div>
+        <div class="sinfo">${esc(r.proposition_par)} propose ${quandJoli(r.proposition, today)} au lieu de ${quandJoli(r.quand, today)}</div>
+        <div class="abtns">
+          <button class="abtn oui" data-act="prop-oui" data-id="${r.id}">Le prospect est ok</button>
+          <button class="abtn non" data-act="prop-non" data-id="${r.id}">Refuser (repart à l'équipe)</button>
+        </div>
+      </div>`).join("");
+  }
+  if (enAttente.length) {
+    html += `<h2>En cours d'attribution</h2>` + enAttente.map(r => `
+      <div class="slot grise">
+        <div class="stitre">${esc(r.type)} · ${quandJoli(r.quand, today)}</div>
+        <div class="sinfo">${slotInfo(r)}</div>
+        <div class="setat">${etatTexte(r)}</div>
+        <div class="abtns">${outilsSetter(r)}</div>
+      </div>`).join("");
+  }
+  el("aprendre").innerHTML = html || `<div class="empty">Rien à attribuer pour l'instant. Les prez et closings calés par les setters arrivent ici.</div>`;
+  el("propositions").innerHTML = "";
+
+  // Emploi du temps (aujourd'hui -> +14 jours)
+  let liste = actifs.filter(r => jourLocal(r.quand) >= today);
+  if (PLANFILTRE === "moi") liste = liste.filter(r => r.assigne_a === moi || r.setter === moi);
+  liste.sort((a, c) => a.quand.localeCompare(c.quand));
+  const parJour = {};
+  liste.forEach(r => { const j = jourLocal(r.quand); (parJour[j] = parJour[j] || []).push(r); });
+  el("planning").innerHTML = Object.keys(parJour).length
+    ? Object.keys(parJour).sort().map(j =>
+        `<div class="jour">${jolieDate(j, today)}</div>` +
+        parJour[j].map(r => `
+          <div class="pl ${r.statut === "confirme" ? "" : "grise"}">
+            <span class="h">${heureLocale(r.quand)}</span>
+            <span class="pill grey">${esc(r.type)}</span>
+            <span>${esc(r.prospect)}</span>
+            <span class="pill">${r.assigne_a ? esc(r.assigne_a) : "?"}</span>
+            <span class="conf ${r.statut === "confirme" ? "today" : ""}" style="font-size:12px">${r.statut === "confirme" ? "confirmé" : "en attente"}</span>
+          </div>`).join("")).join("")
+    : `<div class="empty">Aucun RDV à venir${PLANFILTRE === "moi" ? " pour toi" : ""}.</div>`;
+
+  document.querySelectorAll("[data-act]").forEach(b => b.addEventListener("click", async () => {
+    const id = b.dataset.id, act = b.dataset.act;
+    try {
+      if (act === "toggle-decale") { const d = el("dec-" + id); d.style.display = d.style.display === "flex" ? "none" : "flex"; return; }
+      if (act === "rdv_propose") {
+        const v = el("dech-" + id).value;
+        if (!v) return alert("Choisis le nouvel horaire.");
+        await call("rdv_propose", { id, quand: new Date(v).toISOString() });
+      } else if (act === "prop-oui") await call("rdv_reponse_proposition", { id, ok: true });
+      else if (act === "prop-non") await call("rdv_reponse_proposition", { id, ok: false });
+      else if (act === "rdv_annule") { if (!confirm("Annuler ce RDV ?")) return; await call("rdv_annule", { id }); }
+      else await call(act, { id });
+      await loadData();
+    } catch (e) { alert(e.message); }
+  }));
+
+  // Dashboard : RDV du jour depuis le planning
+  const jour = actifs.filter(r => jourLocal(r.quand) === today).sort((a, c) => a.quand.localeCompare(c.quand));
+  el("k1").textContent = jour.length;
+  el("rdvjour").innerHTML = jour.length
+    ? tableHTML(
+        [{ t: "Heure" }, { t: "Quoi" }, { t: "Prospect" }, { t: "Avec" }, { t: "Setter" }, { t: "Statut" }, { t: "Fiche" }],
+        jour.map(r => [
+          { t: heureLocale(r.quand) },
+          { t: `<span class="pill grey">${esc(r.type)}</span>` },
+          { t: esc(r.prospect) },
+          { t: `<span class="pill">${r.assigne_a ? esc(r.assigne_a) : "?"}</span>` },
+          { t: esc(r.setter) },
+          { t: r.statut === "confirme" ? `<span class="today">confirmé</span>` : `<span class="late">en attente</span>` },
+          { t: r.fiche ? `<details><summary>voir</summary><div>${esc(r.fiche)}</div></details>` : "" }
+        ]))
+    : `<div class="empty">Aucun RDV aujourd'hui.</div>`;
+}
+
 function render() {
   const s = SalesStats.compute(RECORDS, PERIOD, new Date());
   const g = s.global;
   const F = SalesStats.F;
 
-  el("bRdv").style.display = s.rdvJour.length ? "" : "none";
-  el("bRdv").textContent = s.rdvJour.length;
   el("bRel").style.display = s.matin.relancesAFaire ? "" : "none";
   el("bRel").textContent = s.matin.relancesAFaire;
 
-  el("k1").textContent = s.matin.rdvJour;
   el("k2").textContent = eur(s.matin.encaisse30);
   el("k3").textContent = s.matin.relancesAFaire;
   el("k3h").textContent = s.matin.relancesAFaire ? "dont en retard : " + s.relances.filter(r => r.date < s.today).length : "rien en attente";
@@ -94,18 +231,6 @@ function render() {
         s.reste.liste.map(x => [{ t: esc(x.prospect) }, { t: esc(x.contact) }, { t: eur(x.du), n: 1 }]))
       .replace("<table>", `<table><tr><th colspan="2">TOTAL</th><th class="num">${eur(s.reste.total)}</th></tr>`)
     : `<div class="empty">Aucun acompte en attente de solde.</div>`;
-
-  const rdvT = rows => tableHTML(
-    [{ t: "Quand" }, { t: "Heure" }, { t: "Quoi" }, { t: "Prospect" }, { t: "Avec" }, { t: "Setter" }, { t: "Contact" }, { t: "Fiche" }],
-    rows.map(r => [
-      { t: r.jour === s.today ? `<span class="today">${jolieDate(r.jour, s.today)}</span>` : esc(jolieDate(r.jour, s.today)) },
-      { t: esc(r.heure) || "?" }, { t: `<span class="pill grey">${esc(r.quoi)}</span>` }, { t: esc(r.prospect) },
-      { t: `<span class="pill">${esc(r.avec)}</span>` },
-      { t: esc(r.setter) }, { t: esc(r.contact) },
-      { t: r.fiche ? `<details><summary>voir</summary><div>${esc(r.fiche)}</div></details>` : "" }
-    ]));
-  el("rdvjour").innerHTML = s.rdvJour.length ? rdvT(s.rdvJour) : `<div class="empty">Aucun RDV aujourd'hui.</div>`;
-  el("rdv").innerHTML = s.rdvAVenir.length ? rdvT(s.rdvAVenir.slice(0, 30)) : `<div class="empty">Aucun RDV à venir. Le moment idéal pour caler des settings.</div>`;
 
   const pi = s.pipeline;
   const maxPi = Math.max(pi.contacte, pi.cale, pi.vu, pi.enPrez, pi.enClosing, pi.aRelancer, pi.close, pi.perdu, 1);
@@ -202,6 +327,8 @@ function render() {
         ]; }))
     : `<div class="empty">Aucun call loggé sur la période.</div>`;
 
+  renderPlanning(s.today);
+
   el("dot").className = "dot";
   el("updated").textContent = s.totalRecords + " calls loggés. Mis à jour à " +
     new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }) + ".";
@@ -213,7 +340,7 @@ function showPage(id) {
   document.querySelectorAll("#nav button").forEach(x => x.classList.toggle("active", x.dataset.page === id));
   el("pageTitle").textContent = PAGES[id][0];
   el("pageSub").textContent = PAGES[id][1];
-  el("periodCtrls").style.display = id === "log" ? "none" : "";
+  el("periodCtrls").style.display = (id === "log" || id === "planning") ? "none" : "";
 }
 
 // ----- Formulaire -----
@@ -223,8 +350,8 @@ function setType(t) {
   document.querySelectorAll("[data-only]").forEach(x => { x.style.display = x.dataset.only === t ? "" : "none"; });
 }
 function todayLocal() {
-  const d = new Date(), p = n => n < 10 ? "0" + n : n;
-  return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
+  const d = new Date();
+  return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
 }
 function majConditionnels() {
   const rs = el("inResSetting").value;
@@ -243,7 +370,7 @@ function majConditionnels() {
 }
 function resetForm() {
   document.querySelectorAll("#logForm input, #logForm textarea").forEach(i => i.value = "");
-  document.querySelectorAll("#logForm select").forEach(sel => { if (sel.id !== "inQui" && sel.id !== "inRdvAvec") sel.value = ""; });
+  document.querySelectorAll("#logForm select").forEach(sel => { if (sel.id !== "inQui") sel.value = ""; });
   el("inDate").value = todayLocal();
   majConditionnels();
 }
@@ -271,8 +398,8 @@ async function submitForm(e) {
       if (c.cause === "À rappeler" && el("inDateRappel").value) c.date_relance = el("inDateRappel").value;
     }
     if (c.res_setting === "Part en prez" || c.res_setting === "Part en closing") {
-      if (el("inSuiteLe").value) c.rdv_le = new Date(el("inSuiteLe").value).toISOString();
-      c.rdv_avec = el("inRdvAvec").value;
+      if (!el("inSuiteLe").value) return alert("Indique quand la suite est calée.");
+      c.rdv_le = new Date(el("inSuiteLe").value).toISOString();
       c.fiche = el("inFiche").value.trim();
     }
   }
@@ -307,10 +434,11 @@ async function submitForm(e) {
   }
   el("submitBtn").disabled = true;
   try {
-    await call("log", { call: c });
+    const r = await call("log", { call: c });
     resetForm();
+    el("toast").textContent = r.rdv ? "Call enregistré. Le RDV est parti au dispatch (onglet Planning)." : "Call enregistré.";
     el("toast").style.display = "block";
-    setTimeout(() => { el("toast").style.display = "none"; }, 3500);
+    setTimeout(() => { el("toast").style.display = "none"; }, 4000);
     loadData();
   } catch (err) {
     alert("Erreur : " + err.message);
@@ -323,6 +451,7 @@ async function loadData() {
   try {
     const d = await call("data");
     RECORDS = (d.calls || []).map(adapt);
+    RDVS = d.rdvs || [];
     render();
     el("err").style.display = "none";
   } catch (e) {
@@ -337,7 +466,7 @@ async function init() {
   if (!CODE) { el("lock").style.display = "block"; return; }
   try {
     const cfg = await call("config");
-    MOI = cfg.moi; EQUIPE = cfg.equipe || [];
+    MOI = cfg.moi; EQUIPE = (cfg.equipe || []).map(m => m.nom);
   } catch (e) {
     el("lock").style.display = "block";
     el("lockMsg").textContent = e.message === "code invalide"
@@ -347,7 +476,6 @@ async function init() {
   }
   el("app").style.display = "";
   el("hello").textContent = "Salut " + MOI.nom;
-  el("inRdvAvec").innerHTML = EQUIPE.map(n => `<option>${esc(n)}</option>`).join("");
   if (MOI.role === "admin") {
     el("fQuiAdmin").style.display = "";
     el("inQui").innerHTML = EQUIPE.map(n => `<option${n === MOI.nom ? " selected" : ""}>${esc(n)}</option>`).join("");
@@ -362,6 +490,8 @@ async function init() {
     document.querySelectorAll("#periodCtrls button[data-p]").forEach(x => x.classList.remove("active"));
     b.classList.add("active"); PERIOD = b.dataset.p; render();
   }));
+  el("planMoi").addEventListener("click", () => { PLANFILTRE = "moi"; el("planMoi").classList.add("active"); el("planTous").classList.remove("active"); render(); });
+  el("planTous").addEventListener("click", () => { PLANFILTRE = "tous"; el("planTous").classList.add("active"); el("planMoi").classList.remove("active"); render(); });
   el("refresh").addEventListener("click", loadData);
   el("logForm").addEventListener("submit", submitForm);
   await loadData();
