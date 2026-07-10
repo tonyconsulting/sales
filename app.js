@@ -2,7 +2,7 @@
 const API = "https://gwococcxzrrtadtricnd.supabase.co/functions/v1/api";
 const CODE = new URLSearchParams(location.search).get("c") || "";
 
-let MOI = null, EQUIPE = [], RECORDS = [], RDVS = [], PERIOD = "7j", TYPE = "Setting", PLANFILTRE = "tous", VUEQUIPE = "toutes";
+let MOI = null, EQUIPE = [], RECORDS = [], RDVS = [], PERIOD = "7j", TYPE = "Setting", PLANFILTRE = "tous", VUEQUIPE = "toutes", PENDING_RDV = null;
 const NOM_EQUIPE = { kelian: "Team Kélian", mila: "Team Mila" };
 const chipEquipe = e => (MOI && MOI.role === "admin" && e) ? `<span class="pill ${e === "mila" ? "teamM" : "teamK"}" title="${NOM_EQUIPE[e] || e}">${e === "mila" ? "M" : "K"}</span> ` : "";
 
@@ -28,7 +28,7 @@ const PAGES = {
   relances: ["Relances", "Les follow-ups à faire"],
   kpi: ["KPI", "Analysez vos perfs"]
 };
-const ETAT_PILL = { "Closé": "", "À relancer": "amber", "En closing": "", "En prez": "", "Vu en setting": "grey", "Setting calé": "grey", "Perdu": "red", "Contacté": "grey" };
+const ETAT_PILL = { "Closé": "", "À relancer": "amber", "RDV de vente": "", "Vu en setting": "grey", "Setting calé": "grey", "Perdu": "red", "Contacté": "grey" };
 
 const MAP = {
   type: "Type de call", date: "Date", qui: "Qui", telephone: "Téléphone",
@@ -37,7 +37,7 @@ const MAP = {
   res_pres: "Résultat présentation", res_closing: "Résultat closing",
   offre: "Offre vendue", montant: "Montant total", encaisse: "Encaissé aujourd'hui",
   paiement: "Type de paiement", date_relance: "Date de relance",
-  prospect: "Prospect", notes: "Notes", cause: "Cause"
+  prospect: "Prospect", notes: "Notes", cause: "Cause", qui_presentation: "Présentation par"
 };
 function adapt(row) {
   const f = {};
@@ -47,7 +47,7 @@ function adapt(row) {
 
 function roleMatchFront(type, roleVente) {
   const r = String(roleVente || "");
-  if (type === "Prez") return r.includes("presentateur") || r.includes("présentateur") || r.includes("closer");
+  if (type === "Prez" || type === "Vente") return r.includes("presentateur") || r.includes("présentateur") || r.includes("closer");
   if (type === "Closing") return r.includes("closer");
   return false;
 }
@@ -133,6 +133,19 @@ function renderPlanning(today) {
         </div>
       </div>`).join("");
   }
+  const aLogger = actifs.filter(r => r.statut === "confirme" && (admin || r.assigne_a === moi || r.setter === moi));
+  if (aLogger.length) {
+    html += `<h2>Confirmés — log le résultat après l'appel</h2>` + aLogger.map(r => `
+      <div class="slot">
+        <div class="stitre">${chipEquipe(r.equipe)}${esc(r.type)} · ${quandJoli(r.quand, today)} · ${esc(r.prospect)}</div>
+        <div class="sinfo">${slotInfo(r)} · pris par ${esc(r.assigne_a)}</div>
+        ${ficheHTML(r)}
+        <div class="abtns">
+          <button class="abtn oui" data-act="log-resultat" data-id="${r.id}">Log le résultat (pré-rempli)</button>
+          ${outilsSetter(r)}
+        </div>
+      </div>`).join("");
+  }
   if (enAttente.length) {
     html += `<h2>En cours d'attribution</h2>` + enAttente.map(r => `
       <div class="slot grise">
@@ -168,6 +181,21 @@ function renderPlanning(today) {
     const id = b.dataset.id, act = b.dataset.act;
     try {
       if (act === "toggle-decale") { const d = el("dec-" + id); d.style.display = d.style.display === "flex" ? "none" : "flex"; return; }
+      if (act === "log-resultat") {
+        const r = RDVS.find(x => x.id === id);
+        if (!r) return;
+        showPage("log"); setType("Vente"); resetForm(); setType("Vente");
+        el("inProspect").value = r.prospect || "";
+        el("inInsta").value = r.instagram || "";
+        el("inSource").value = r.source || "";
+        if (r.assigne_a && [...el("inQuiClose").options].some(o => o.value === r.assigne_a)) el("inQuiClose").value = r.assigne_a;
+        if (r.assigne_a && [...el("inQuiPres").options].some(o => o.value === r.assigne_a)) el("inQuiPres").value = r.assigne_a;
+        PENDING_RDV = r.id;
+        el("toast").textContent = "Pré-rempli depuis le RDV de " + (r.prospect || "?") + " — choisis le résultat et enregistre.";
+        el("toast").style.display = "block";
+        setTimeout(() => { el("toast").style.display = "none"; }, 5000);
+        return;
+      }
       if (act === "rdv_propose") {
         const v = el("dech-" + id).value;
         if (!v) return alert("Choisis le nouvel horaire.");
@@ -225,7 +253,7 @@ function render() {
     ["Settings effectués", g.effectues],
     ["Show", fmtPct(g.txShow)],
     ["Non aboutis", g.nonAboutis],
-    ["Part en prez/closing", fmtPct(g.txAbouti)],
+    ["Aboutis en RDV de vente", fmtPct(g.txAbouti)],
     ["Closés", g.closes],
     ["Taux de closing", fmtPct(g.txClose)],
     ["Vendu", eur(g.vendu)],
@@ -245,14 +273,14 @@ function render() {
     : `<div class="empty">Aucun acompte en attente de solde.</div>`;
 
   const pi = s.pipeline;
-  const maxPi = Math.max(pi.contacte, pi.cale, pi.vu, pi.enPrez, pi.enClosing, pi.aRelancer, pi.close, pi.perdu, 1);
+  const maxPi = Math.max(pi.contacte, pi.cale, pi.vu, pi.enVente, pi.aRelancer, pi.close, pi.perdu, 1);
   const bar = (label, n, cls, eurVal) => `<div class="row"><div class="name">${label}${eurVal ? `<br><span class="eur">${eur(eurVal)}</span>` : ""}</div><div class="bar"><i class="${cls || ""}" style="width:${Math.round(n / maxPi * 100)}%"></i></div><div class="n">${n}</div></div>`;
   el("pipe").innerHTML = pi.total
-    ? `<div class="pipe">` + bar("Setting calé", pi.cale, "grey") + bar("Vu en setting", pi.vu, "grey") + bar("En prez", pi.enPrez) +
-      bar("En closing", pi.enClosing) + bar("À relancer", pi.aRelancer, "", pi.aRelancerEur) + bar("Closé", pi.close, "", pi.closeEur) + bar("Perdu", pi.perdu, "red") + `</div>`
+    ? `<div class="pipe">` + bar("Setting calé", pi.cale, "grey") + bar("Vu en setting", pi.vu, "grey") + bar("RDV de vente", pi.enVente) +
+      bar("À relancer", pi.aRelancer, "", pi.aRelancerEur) + bar("Closé", pi.close, "", pi.closeEur) + bar("Perdu", pi.perdu, "red") + `</div>`
     : `<div class="empty">Aucun prospect identifié pour l'instant.</div>`;
 
-  const ORDRE = ["Setting calé", "Vu en setting", "En prez", "En closing", "À relancer", "Closé", "Perdu"];
+  const ORDRE = ["Setting calé", "Vu en setting", "RDV de vente", "À relancer", "Closé", "Perdu"];
   el("kanban").innerHTML = s.prospects.length
     ? ORDRE.map(etat => {
         const list = s.prospects.filter(x => x.etat === etat);
@@ -328,12 +356,12 @@ function render() {
   const names = Object.keys(s.people).sort();
   el("people").innerHTML = names.length
     ? tableHTML(
-        [{ t: "Qui" }, { t: "Calés", n: 1 }, { t: "Effectués", n: 1 }, { t: "Show", n: 1 }, { t: "No-show", n: 1 }, { t: "Non aboutis", n: 1 }, { t: "Vers prez", n: 1 }, { t: "Vers closing", n: 1 }, { t: "Prez closées", n: 1 }, { t: "Closings closés", n: 1 }, { t: "Taux close", n: 1 }, { t: "Vendu", n: 1 }, { t: "Encaissé", n: 1 }],
+        [{ t: "Qui" }, { t: "Settings calés", n: 1 }, { t: "Effectués", n: 1 }, { t: "Show", n: 1 }, { t: "No-show", n: 1 }, { t: "Non aboutis", n: 1 }, { t: "RDV de vente", n: 1 }, { t: "Prez faites", n: 1 }, { t: "Closings faits", n: 1 }, { t: "Closés", n: 1 }, { t: "Taux close", n: 1 }, { t: "Vendu", n: 1 }, { t: "Encaissé", n: 1 }],
         names.map(n => { const x = s.people[n]; return [
           { t: esc(n) }, { t: x.cales, n: 1 }, { t: x.effectues, n: 1 },
-          { t: fmtPct(x.txShow), n: 1 }, { t: x.noShows + x.prezNoShow + x.closNoShow, n: 1 }, { t: x.nonAboutis, n: 1 },
-          { t: x.versPrez, n: 1 }, { t: x.versClosing, n: 1 },
-          { t: x.prezCloses, n: 1 }, { t: x.closCloses, n: 1 },
+          { t: fmtPct(x.txShow), n: 1 }, { t: x.noShows + x.ventesNoShow, n: 1 }, { t: x.nonAboutis, n: 1 },
+          { t: x.versVente, n: 1 }, { t: x.presFaites, n: 1 }, { t: x.ventesEff, n: 1 },
+          { t: x.closes, n: 1 },
           { t: fmtPct(x.txClose), n: 1 },
           { t: eur(x.vendu), n: 1 }, { t: eur(x.encaisse), n: 1 }
         ]; }))
@@ -369,16 +397,12 @@ function majConditionnels() {
   const rs = el("inResSetting").value;
   el("caleBlock").style.display = rs === "Calé (à venir)" ? "" : "none";
   el("causeBlock").style.display = rs === "Non abouti" ? "" : "none";
-  el("suiteBlock").style.display = (rs === "Part en prez" || rs === "Part en closing") ? "" : "none";
+  el("suiteBlock").style.display = rs === "RDV de vente calé" ? "" : "none";
   el("rappelBlock").style.display = el("inCause").value === "À rappeler" ? "" : "none";
-  const rp = el("inResPres").value;
-  el("closePBlock").style.display = rp === "Closé" ? "" : "none";
-  el("causePBlock").style.display = rp === "Pas closé" ? "" : "none";
-  el("relancePBlock").style.display = rp === "À relancer" ? "" : "none";
-  const rc = el("inResClosing").value;
-  el("closeCBlock").style.display = rc === "Closé" ? "" : "none";
-  el("causeCBlock").style.display = rc === "Pas closé" ? "" : "none";
-  el("relanceCBlock").style.display = rc === "À relancer" ? "" : "none";
+  const rv = el("inResVente").value;
+  el("closeVBlock").style.display = rv === "Closé" ? "" : "none";
+  el("causeVBlock").style.display = rv === "Pas closé" ? "" : "none";
+  el("relanceVBlock").style.display = rv === "À relancer" ? "" : "none";
 }
 function resetForm() {
   document.querySelectorAll("#logForm input, #logForm textarea").forEach(i => i.value = "");
@@ -391,7 +415,6 @@ async function submitForm(e) {
   const c = { type: TYPE, prospect: el("inProspect").value.trim() };
   if (!c.prospect) return alert("Le prospect est obligatoire.");
   c.instagram = el("inInsta").value.trim();
-  c.telephone = el("inTel").value.trim();
   c.source = el("inSource").value;
   c.date = el("inDate").value || todayLocal();
   c.notes = el("inNotes").value.trim();
@@ -412,35 +435,26 @@ async function submitForm(e) {
       if (!c.cause) return alert("La cause est obligatoire.");
       if (c.cause === "À rappeler" && el("inDateRappel").value) c.date_relance = el("inDateRappel").value;
     }
-    if (c.res_setting === "Part en prez" || c.res_setting === "Part en closing") {
-      if (!el("inSuiteLe").value) return alert("Indique quand la suite est calée.");
+    if (c.res_setting === "RDV de vente calé") {
+      if (!el("inSuiteLe").value) return alert("Indique quand le RDV de vente est calé.");
       c.rdv_le = new Date(el("inSuiteLe").value).toISOString();
       c.fiche = el("inFiche").value.trim();
     }
   }
-  if (TYPE === "Prez") {
-    c.res_pres = el("inResPres").value;
-    if (!c.res_pres) return alert("Le résultat de la prez est obligatoire.");
-    if (c.res_pres === "Closé") {
-      c.offre = el("inOffreP").value;
-      c.paiement = el("inPaiementP").value;
-      if (el("inMontantP").value) c.montant = Number(el("inMontantP").value);
-      if (el("inEncaisseP").value) c.encaisse = Number(el("inEncaisseP").value);
-    }
-    if (c.res_pres === "Pas closé") c.cause = el("inCauseP").value;
-    if (c.res_pres === "À relancer" && el("inDateRelanceP").value) c.date_relance = el("inDateRelanceP").value;
-  }
-  if (TYPE === "Closing") {
-    c.res_closing = el("inResClosing").value;
-    if (!c.res_closing) return alert("Le résultat du closing est obligatoire.");
+  if (TYPE === "Vente") {
+    c.res_closing = el("inResVente").value;
+    if (!c.res_closing) return alert("Le résultat de l'appel est obligatoire.");
+    c.qui_presentation = el("inQuiPres").value;
+    c.qui = el("inQuiClose").value;
     if (c.res_closing === "Closé") {
-      c.offre = el("inOffreC").value;
-      c.paiement = el("inPaiementC").value;
-      if (el("inMontantC").value) c.montant = Number(el("inMontantC").value);
-      if (el("inEncaisseC").value) c.encaisse = Number(el("inEncaisseC").value);
+      c.offre = el("inOffreV").value;
+      c.paiement = el("inPaiementV").value;
+      if (el("inMontantV").value) c.montant = Number(el("inMontantV").value);
+      if (el("inEncaisseV").value) c.encaisse = Number(el("inEncaisseV").value);
     }
-    if (c.res_closing === "Pas closé") c.cause = el("inCauseC").value;
-    if (c.res_closing === "À relancer" && el("inDateRelanceC").value) c.date_relance = el("inDateRelanceC").value;
+    if (c.res_closing === "Pas closé") c.cause = el("inCauseV").value;
+    if (c.res_closing === "À relancer" && el("inDateRelanceV").value) c.date_relance = el("inDateRelanceV").value;
+    if (PENDING_RDV) c.rdv_id = PENDING_RDV;
   }
   if (TYPE === "Paiement") {
     if (!el("inEncaissePmt").value) return alert("Le montant encaissé est obligatoire.");
@@ -450,6 +464,7 @@ async function submitForm(e) {
   el("submitBtn").disabled = true;
   try {
     const r = await call("log", { call: c });
+    PENDING_RDV = null;
     resetForm();
     el("toast").textContent = r.rdv ? "Call enregistré. Le RDV est parti au dispatch (onglet Planning)." : "Call enregistré.";
     el("toast").style.display = "block";
@@ -491,6 +506,10 @@ async function init() {
   }
   el("app").style.display = "";
   el("hello").textContent = "Salut " + MOI.nom;
+  const noms = EQUIPE.map(m => m.nom);
+  const optsMoi = noms.map(n => `<option${n === MOI.nom ? " selected" : ""}>${esc(n)}</option>`).join("");
+  el("inQuiPres").innerHTML = optsMoi;
+  el("inQuiClose").innerHTML = optsMoi;
   if (MOI.role === "admin") {
     el("fQuiAdmin").style.display = "";
     el("inQui").innerHTML = EQUIPE.map(m => `<option${m.nom === MOI.nom ? " selected" : ""}>${esc(m.nom)}</option>`).join("");
@@ -508,7 +527,7 @@ async function init() {
   showPage(MOI.role === "admin" ? "dashboard" : "log");
   document.querySelectorAll("#nav button").forEach(b => b.addEventListener("click", () => showPage(b.dataset.page)));
   document.querySelectorAll("#typeBtns button").forEach(b => b.addEventListener("click", () => setType(b.dataset.t)));
-  ["inResSetting", "inCause", "inResPres", "inResClosing"].forEach(i => el(i).addEventListener("change", majConditionnels));
+  ["inResSetting", "inCause", "inResVente"].forEach(i => el(i).addEventListener("change", majConditionnels));
   document.querySelectorAll("#periodCtrls button[data-p]").forEach(b => b.addEventListener("click", () => {
     document.querySelectorAll("#periodCtrls button[data-p]").forEach(x => x.classList.remove("active"));
     b.classList.add("active"); PERIOD = b.dataset.p; render();
