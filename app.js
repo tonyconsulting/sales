@@ -12,7 +12,8 @@ const VAPID_PUB = "BBefpGJrlJu2jhuahy0XnidzpnE5nfZ84kRh3YueXISXD036WLlbQu50vebuJ
 
 let MOI = null, EQUIPE = [], RECORDS = [], RDVS = [], PERIOD = "1j", TYPE = "Setting", PLANFILTRE = "tous", VUEQUIPE = "toutes", VUEMOI = "equipe", PENDING_RDV = null, PENDING_PROSPECT = "", PENDING_TYPE = "", PENDING_TEL = "", PENDING_TEL_PROSPECT = "";
 const NOM_EQUIPE = { kelian: "Team Kélian", mila: "Team Mila" };
-const chipEquipe = e => (MOI && MOI.role === "admin" && e) ? `<span class="pill ${e === "mila" ? "teamM" : "teamK"}" title="${NOM_EQUIPE[e] || e}">${e === "mila" ? "M" : "K"}</span> ` : "";
+const voitTout = () => MOI && (MOI.role === "admin" || MOI.role === "observateur");
+const chipEquipe = e => (voitTout() && e) ? `<span class="pill ${e === "mila" ? "teamM" : "teamK"}" title="${NOM_EQUIPE[e] || e}">${e === "mila" ? "M" : "K"}</span> ` : "";
 
 const el = id => document.getElementById(id);
 const eur = n => (Number(n) || 0).toLocaleString("fr-FR") + " €";
@@ -288,7 +289,7 @@ function renderPlanning(today) {
 // Filtres de vue appliqués avant tous les calculs :
 // équipe (admin) puis « Moi » (mes calls : setting/closing par moi, ou prez par moi)
 function recsVisibles() {
-  let recs = (MOI.role !== "admin" || VUEQUIPE === "toutes") ? RECORDS : RECORDS.filter(r => r.equipe === VUEQUIPE);
+  let recs = (!voitTout() || VUEQUIPE === "toutes") ? RECORDS : RECORDS.filter(r => r.equipe === VUEQUIPE);
   if (VUEMOI === "moi") {
     const F = SalesStats.F;
     recs = recs.filter(r => r.fields[F.qui] === MOI.nom || r.fields[F.quiPres] === MOI.nom);
@@ -296,7 +297,7 @@ function recsVisibles() {
   return recs;
 }
 function rdvsVisibles() {
-  if (MOI.role !== "admin" || VUEQUIPE === "toutes") return RDVS;
+  if (!voitTout() || VUEQUIPE === "toutes") return RDVS;
   return RDVS.filter(r => r.equipe === VUEQUIPE);
 }
 
@@ -420,7 +421,7 @@ function render() {
           { t: r.date < s.today ? `<span class="late">${esc(r.date)}</span>` : esc(r.date) },
           { t: esc(r.prospect) }, { t: esc(r.contact) }, { t: esc(r.source || "–") }, { t: esc(r.qui) },
           { t: r.notes ? `<details><summary>voir</summary><div>${esc(r.notes)}</div></details>` : "" },
-          { t: `<button class="abtn oui rel-log" data-nom="${esc(r.prospect)}" data-contact="${esc(r.contact)}" data-type="${r.type === "Vente" ? "Vente" : "Setting"}" data-source="${esc(r.source || "")}">Log le résultat</button>` }
+          { t: MOI.role === "observateur" ? "" : `<button class="abtn oui rel-log" data-nom="${esc(r.prospect)}" data-contact="${esc(r.contact)}" data-type="${r.type === "Vente" ? "Vente" : "Setting"}" data-source="${esc(r.source || "")}">Log le résultat</button>` }
         ]))
     : `<div class="empty">Aucune relance en attente.</div>`;
   document.querySelectorAll(".rel-log").forEach(b => b.addEventListener("click", () => {
@@ -815,6 +816,7 @@ function b64ToU8(s) {
 }
 async function initNotifs() {
   const zone = el("notifZone");
+  if (MOI && MOI.role === "observateur") { zone.innerHTML = ""; return; }
   const iOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
   const standalone = (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) || navigator.standalone === true;
   if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
@@ -947,7 +949,12 @@ async function init() {
   el("userbox").style.display = "";
   el("uinit").textContent = (MOI.nom || "?")[0].toUpperCase();
   el("unom").textContent = MOI.nom;
-  el("urole").textContent = MOI.role === "admin" ? "Head of sales" : (MOI.role_vente || "membre");
+  el("urole").textContent = MOI.role === "admin" ? "Head of sales" : MOI.role === "observateur" ? "Observateur" : (MOI.role_vente || "membre");
+  if (MOI.role === "observateur") {
+    document.querySelector('#nav button[data-page="log"]').style.display = "none";
+    el("vueEquipe").style.display = "";
+    el("vueEquipe").addEventListener("change", () => { VUEQUIPE = el("vueEquipe").value; render(); });
+  }
   el("burger").addEventListener("click", () => { el("sideNav").classList.add("open"); el("navOverlay").classList.add("on"); });
   el("navOverlay").addEventListener("click", fermeTiroir);
   el("asideClose").addEventListener("click", fermeTiroir);
@@ -974,7 +981,7 @@ async function init() {
   el("inInsta").addEventListener("change", autofillDepuisInsta);
   resetForm();
   setType("Setting");
-  showPage(MOI.role === "admin" ? "dashboard" : "log");
+  showPage(MOI.role === "admin" || MOI.role === "observateur" ? "dashboard" : "log");
   document.querySelectorAll("#nav button").forEach(b => b.addEventListener("click", () => { showPage(b.dataset.page); fermeTiroir(); }));
   document.querySelectorAll("#typeBtns button").forEach(b => b.addEventListener("click", () => setType(b.dataset.t)));
   ["inResSetting", "inCause", "inResVente"].forEach(i => el(i).addEventListener("change", majConditionnels));
