@@ -1,7 +1,6 @@
 {
   "name": "Sales",
   "short_name": "Sales",
-  "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "background_color": "#0b0e0d",
