@@ -2,7 +2,7 @@
 const API = "https://gwococcxzrrtadtricnd.supabase.co/functions/v1/api";
 const CODE = new URLSearchParams(location.search).get("c") || "";
 
-let MOI = null, EQUIPE = [], RECORDS = [], RDVS = [], PERIOD = "7j", TYPE = "Setting", PLANFILTRE = "tous", VUEQUIPE = "toutes", PENDING_RDV = null;
+let MOI = null, EQUIPE = [], RECORDS = [], RDVS = [], PERIOD = "7j", TYPE = "Setting", PLANFILTRE = "tous", VUEQUIPE = "toutes", PENDING_RDV = null, PENDING_PROSPECT = "";
 const NOM_EQUIPE = { kelian: "Team Kélian", mila: "Team Mila" };
 const chipEquipe = e => (MOI && MOI.role === "admin" && e) ? `<span class="pill ${e === "mila" ? "teamM" : "teamK"}" title="${NOM_EQUIPE[e] || e}">${e === "mila" ? "M" : "K"}</span> ` : "";
 
@@ -19,7 +19,7 @@ const heureLocale = iso => { const d = new Date(iso); return pad(d.getHours()) +
 const quandJoli = (iso, today) => jolieDate(jourLocal(iso), today) + " à " + heureLocale(iso);
 
 const PAGES = {
-  log: ["Log un call", "Après chaque call, 20 secondes"],
+  log: ["Log un call", "Après chaque call, 10 secondes"],
   dashboard: ["Dashboard", "Vue d'ensemble"],
   pipeline: ["Pipeline", "Suivez vos deals"],
   prospects: ["Prospects", "Tous les prospects identifiés"],
@@ -79,19 +79,19 @@ function slotInfo(r) {
 }
 function etatTexte(r) {
   if (r.statut === "propose") return "En attente de " + esc(r.assigne_a) + " (référent)";
-  if (r.statut === "ouvert") return "Ouvert — premier " + (r.type === "Prez" ? "présentateur/closer" : "closer") + " qui accepte le prend";
+  if (r.statut === "ouvert") return "Ouvert — le premier qui accepte le prend (closer ou présentateur)";
   if (r.statut === "decale") return "Décalage proposé par " + esc(r.proposition_par) + " (" + quandJoli(r.proposition, SalesStats.ymdLocal(new Date())) + ") — en attente du setter";
   return "";
 }
 
 function renderPlanning(today) {
   const moi = MOI.nom, admin = MOI.role === "admin";
-  const actifs = rdvsVisibles().filter(r => r.statut !== "annule");
+  const actifs = rdvsVisibles().filter(r => r.statut !== "annule" && r.statut !== "fait");
   const nonConfirmes = actifs.filter(r => r.statut !== "confirme");
 
   const pourMoi = nonConfirmes.filter(r =>
     (r.statut === "propose" && r.assigne_a === moi) ||
-    (r.statut === "ouvert" && roleMatchFront(r.type, MOI.role_vente) && !(r.refusee_par || []).includes(moi) && r.setter !== moi));
+    (r.statut === "ouvert" && roleMatchFront(r.type, MOI.role_vente) && !(r.refusee_par || []).includes(moi)));
   const propositions = actifs.filter(r => r.statut === "decale" && (admin || r.setter === moi));
   const enAttente = nonConfirmes.filter(r => !pourMoi.includes(r) && !propositions.includes(r));
 
@@ -133,17 +133,40 @@ function renderPlanning(today) {
         </div>
       </div>`).join("");
   }
-  const aLogger = actifs.filter(r => r.statut === "confirme" && (admin || r.assigne_a === moi || r.setter === moi));
+  const mesConfirmes = actifs.filter(r => r.statut === "confirme" && (admin || r.assigne_a === moi || r.setter === moi))
+    .sort((a, c) => a.quand.localeCompare(c.quand));
+  const deplaceHTML = r => `
+        <div class="decale-inline" id="dep-${r.id}">
+          <input type="datetime-local" id="deph-${r.id}">
+          <button class="abtn oui" data-act="rdv_deplace" data-id="${r.id}">Valider le nouvel horaire</button>
+        </div>`;
+  const aLogger = mesConfirmes.filter(r => jourLocal(r.quand) <= today);
+  const aVenir = mesConfirmes.filter(r => jourLocal(r.quand) > today);
   if (aLogger.length) {
-    html += `<h2>Confirmés — log le résultat après l'appel</h2>` + aLogger.map(r => `
+    html += `<h2>À logger — l'appel est passé (ou c'est aujourd'hui)</h2>` + aLogger.map(r => `
       <div class="slot">
         <div class="stitre">${chipEquipe(r.equipe)}${esc(r.type)} · ${quandJoli(r.quand, today)} · ${esc(r.prospect)}</div>
         <div class="sinfo">${slotInfo(r)} · pris par ${esc(r.assigne_a)}</div>
         ${ficheHTML(r)}
         <div class="abtns">
           <button class="abtn oui" data-act="log-resultat" data-id="${r.id}">Log le résultat (pré-rempli)</button>
+          <button class="abtn" data-act="toggle-deplace" data-id="${r.id}">Décaler</button>
           ${outilsSetter(r)}
         </div>
+        ${deplaceHTML(r)}
+      </div>`).join("");
+  }
+  if (aVenir.length) {
+    html += `<h2>À venir — confirmés</h2>` + aVenir.map(r => `
+      <div class="slot">
+        <div class="stitre">${chipEquipe(r.equipe)}${esc(r.type)} · ${quandJoli(r.quand, today)} · ${esc(r.prospect)}</div>
+        <div class="sinfo">${slotInfo(r)} · pris par ${esc(r.assigne_a)}</div>
+        ${ficheHTML(r)}
+        <div class="abtns">
+          <button class="abtn" data-act="toggle-deplace" data-id="${r.id}">Décaler</button>
+          ${outilsSetter(r)}
+        </div>
+        ${deplaceHTML(r)}
       </div>`).join("");
   }
   if (enAttente.length) {
@@ -155,7 +178,7 @@ function renderPlanning(today) {
         <div class="abtns">${outilsSetter(r)}</div>
       </div>`).join("");
   }
-  el("aprendre").innerHTML = html || `<div class="empty">Rien à attribuer pour l'instant. Les prez et closings calés par les setters arrivent ici.</div>`;
+  el("aprendre").innerHTML = html || `<div class="empty">Rien pour l'instant. Les settings calés et les RDV de vente arrivent ici.</div>`;
   el("propositions").innerHTML = "";
 
   // Emploi du temps (aujourd'hui -> +14 jours)
@@ -181,16 +204,31 @@ function renderPlanning(today) {
     const id = b.dataset.id, act = b.dataset.act;
     try {
       if (act === "toggle-decale") { const d = el("dec-" + id); d.style.display = d.style.display === "flex" ? "none" : "flex"; return; }
+      if (act === "toggle-deplace") { const d = el("dep-" + id); d.style.display = d.style.display === "flex" ? "none" : "flex"; return; }
+      if (act === "rdv_deplace") {
+        const v = el("deph-" + id).value;
+        if (!v) return alert("Choisis le nouvel horaire.");
+        await call("rdv_deplace", { id, quand: new Date(v).toISOString() });
+        await loadData();
+        return;
+      }
       if (act === "log-resultat") {
         const r = RDVS.find(x => x.id === id);
         if (!r) return;
-        showPage("log"); setType("Vente"); resetForm(); setType("Vente");
+        const t = r.type === "Setting" ? "Setting" : "Vente";
+        showPage("log"); resetForm(); setType(t);
         el("inProspect").value = r.prospect || "";
         el("inInsta").value = r.instagram || "";
         el("inSource").value = r.source || "";
         if (r.assigne_a && [...el("inQuiClose").options].some(o => o.value === r.assigne_a)) el("inQuiClose").value = r.assigne_a;
         if (r.assigne_a && [...el("inQuiPres").options].some(o => o.value === r.assigne_a)) el("inQuiPres").value = r.assigne_a;
+        if (MOI.role === "admin" && r.assigne_a && [...el("inQui").options].some(o => o.value === r.assigne_a)) {
+          el("inQui").value = r.assigne_a;
+          el("inQui").dispatchEvent(new Event("change"));
+        }
+        majChips();
         PENDING_RDV = r.id;
+        PENDING_PROSPECT = r.prospect || "";
         el("toast").textContent = "Pré-rempli depuis le RDV de " + (r.prospect || "?") + " — choisis le résultat et enregistre.";
         el("toast").style.display = "block";
         setTimeout(() => { el("toast").style.display = "none"; }, 5000);
@@ -385,6 +423,81 @@ function showPage(id) {
   el("periodCtrls").style.display = (id === "log" || id === "planning") ? "none" : "";
 }
 
+// ----- Chips : un tap au lieu d'un menu déroulant -----
+const CHIP_SELECTS = ["inResSetting", "inCause", "inResVente", "inCauseV", "inSource", "inOffreV", "inPaiementV", "inQuiPres", "inQuiClose", "inVenteMoi"];
+const CHIP_TOGGLE = ["inSource", "inOffreV", "inPaiementV", "inVenteMoi"]; // optionnels : re-tap = désélection
+function buildChips(id) {
+  const sel = el(id);
+  let box = document.getElementById("chips-" + id);
+  if (!box) {
+    box = document.createElement("div");
+    box.className = "chips";
+    box.id = "chips-" + id;
+    sel.after(box);
+    sel.classList.add("chipified");
+  }
+  box.innerHTML = [...sel.options].filter(o => o.value !== "").map(o =>
+    `<button type="button" data-val="${esc(o.value)}">${esc(o.textContent)}</button>`).join("");
+  box.querySelectorAll("button").forEach(b => b.addEventListener("click", () => {
+    sel.value = (sel.value === b.dataset.val && CHIP_TOGGLE.includes(id)) ? "" : b.dataset.val;
+    sel.dispatchEvent(new Event("change"));
+    majChips(id);
+  }));
+  majChips(id);
+}
+function majChips(id) {
+  (id ? [id] : CHIP_SELECTS).forEach(i => {
+    const box = document.getElementById("chips-" + i);
+    if (!box) return;
+    const v = el(i).value;
+    box.querySelectorAll("button").forEach(b => b.classList.toggle("active", v === b.dataset.val));
+  });
+}
+
+// ----- Autocomplétion prospects : 3 lettres suffisent, l'Insta et la source suivent -----
+// En cas d'ambiguïté (deux prospects du même nom, deux noms sur le même @),
+// on ne pré-remplit RIEN : mieux vaut un champ vide qu'une mauvaise donnée.
+let PAR_NOM = {}, PAR_INSTA = {};
+const cleTxt = s => String(s || "").trim().toLowerCase().replace(/\s+/g, " ");
+function majProspectsIdx() {
+  const F = SalesStats.F;
+  PAR_NOM = {}; PAR_INSTA = {};
+  const ajoute = (nom, insta, source) => {
+    if (nom) {
+      const k = cleTxt(nom);
+      const e = PAR_NOM[k] = PAR_NOM[k] || { nom: String(nom).trim(), instas: new Set(), sources: new Set() };
+      if (insta) e.instas.add(String(insta).trim());
+      if (source) e.sources.add(source);
+    }
+    if (insta) {
+      const k = cleTxt(insta);
+      const e = PAR_INSTA[k] = PAR_INSTA[k] || { insta: String(insta).trim(), noms: new Set(), sources: new Set() };
+      if (nom) e.noms.add(String(nom).trim());
+      if (source) e.sources.add(source);
+    }
+  };
+  RECORDS.forEach(r => { const f = r.fields; ajoute(f[F.prospect], f[F.insta], f[F.source]); });
+  RDVS.forEach(r => ajoute(r.prospect, r.instagram, r.source));
+  const seul = set => set.size === 1 ? [...set][0] : "";
+  el("dlProspects").innerHTML = Object.values(PAR_NOM).map(p =>
+    `<option value="${esc(p.nom)}">${esc(seul(p.instas))}</option>`).join("");
+  el("dlInsta").innerHTML = Object.values(PAR_INSTA).map(p =>
+    `<option value="${esc(p.insta)}">${esc(seul(p.noms))}</option>`).join("");
+}
+const unSeul = set => set && set.size === 1 ? [...set][0] : "";
+function autofillProspect() {
+  const p = PAR_NOM[cleTxt(el("inProspect").value)];
+  if (!p) return;
+  if (!el("inInsta").value && unSeul(p.instas)) el("inInsta").value = unSeul(p.instas);
+  if (!el("inSource").value && unSeul(p.sources)) { el("inSource").value = unSeul(p.sources); majChips("inSource"); }
+}
+function autofillDepuisInsta() {
+  const p = PAR_INSTA[cleTxt(el("inInsta").value)];
+  if (!p) return;
+  if (!el("inProspect").value && unSeul(p.noms)) el("inProspect").value = unSeul(p.noms);
+  if (!el("inSource").value && unSeul(p.sources)) { el("inSource").value = unSeul(p.sources); majChips("inSource"); }
+}
+
 // ----- Formulaire -----
 function setType(t) {
   TYPE = t;
@@ -407,9 +520,13 @@ function majConditionnels() {
   el("relanceVBlock").style.display = rv === "À relancer" ? "" : "none";
 }
 function resetForm() {
+  PENDING_RDV = null;
+  PENDING_PROSPECT = "";
   document.querySelectorAll("#logForm input, #logForm textarea").forEach(i => i.value = "");
   document.querySelectorAll("#logForm select").forEach(sel => { if (sel.id !== "inQui") sel.value = ""; });
   el("inDate").value = todayLocal();
+  if (MOI) { el("inQuiPres").value = MOI.nom; el("inQuiClose").value = MOI.nom; }
+  majChips();
   majConditionnels();
 }
 async function submitForm(e) {
@@ -441,7 +558,9 @@ async function submitForm(e) {
       if (!el("inSuiteLe").value) return alert("Indique quand le RDV de vente est calé.");
       c.rdv_le = new Date(el("inSuiteLe").value).toISOString();
       c.fiche = el("inFiche").value.trim();
+      if (el("inVenteMoi").value === "moi") c.vente_moi = true;
     }
+    if (PENDING_RDV && cleTxt(c.prospect) === cleTxt(PENDING_PROSPECT)) c.rdv_id = PENDING_RDV;
   }
   if (TYPE === "Vente") {
     c.res_closing = el("inResVente").value;
@@ -456,7 +575,7 @@ async function submitForm(e) {
     }
     if (c.res_closing === "Pas closé") c.cause = el("inCauseV").value;
     if (c.res_closing === "À relancer" && el("inDateRelanceV").value) c.date_relance = el("inDateRelanceV").value;
-    if (PENDING_RDV) c.rdv_id = PENDING_RDV;
+    if (PENDING_RDV && cleTxt(c.prospect) === cleTxt(PENDING_PROSPECT)) c.rdv_id = PENDING_RDV;
   }
   if (TYPE === "Paiement") {
     if (!el("inEncaissePmt").value) return alert("Le montant encaissé est obligatoire.");
@@ -464,11 +583,15 @@ async function submitForm(e) {
     c.paiement = "Solde";
   }
   el("submitBtn").disabled = true;
+  el("submitBtn").textContent = "Enregistrement…";
   try {
     const r = await call("log", { call: c });
-    PENDING_RDV = null;
     resetForm();
-    el("toast").textContent = r.rdv ? "Call enregistré. Le RDV est parti au dispatch (onglet Planning)." : "Call enregistré.";
+    el("toast").textContent = r.rdv_erreur ? "Call enregistré, MAIS le RDV n'a pas pu être créé au planning — préviens Tony (" + r.rdv_erreur + ")."
+      : !r.rdv ? "Call enregistré."
+      : c.res_setting === "Calé (à venir)" ? "Call enregistré. Le setting est au planning."
+      : r.rdv_statut === "confirme" ? "Call enregistré. L'appel de vente est au planning de " + (r.rdv_assigne || "?") + "."
+      : "Call enregistré. Le RDV est parti au dispatch (onglet Planning).";
     el("toast").style.display = "block";
     setTimeout(() => { el("toast").style.display = "none"; }, 4000);
     loadData();
@@ -476,6 +599,7 @@ async function submitForm(e) {
     alert("Erreur : " + err.message);
   } finally {
     el("submitBtn").disabled = false;
+    el("submitBtn").textContent = "Enregistrer";
   }
 }
 
@@ -484,6 +608,7 @@ async function loadData() {
     const d = await call("data");
     RECORDS = (d.calls || []).map(adapt);
     RDVS = d.rdvs || [];
+    majProspectsIdx();
     render();
     el("err").style.display = "none";
   } catch (e) {
@@ -524,6 +649,11 @@ async function init() {
     el("inQui").addEventListener("change", majEquipeForm);
     majEquipeForm();
   }
+  CHIP_SELECTS.forEach(buildChips);
+  // « Je fais l'appel moi-même » : seulement pour ceux qui peuvent closer
+  if (!(MOI.role === "admin" || roleMatchFront("Vente", MOI.role_vente))) el("fVenteMoi").style.display = "none";
+  el("inProspect").addEventListener("change", autofillProspect);
+  el("inInsta").addEventListener("change", autofillDepuisInsta);
   resetForm();
   setType("Setting");
   showPage(MOI.role === "admin" ? "dashboard" : "log");
