@@ -100,6 +100,24 @@
   .bl { font-size:10px; color:var(--muted); }
   .foot { color:var(--muted); font-size:12px; margin-top:28px; line-height:1.6; }
 
+  /* Planning / dispatch */
+  .slot { background:var(--cardbg); border:1px solid var(--line); border-radius:14px; padding:16px 18px; margin-bottom:12px; }
+  .slot.grise { opacity:0.45; }
+  .slot .stitre { font-weight:700; font-size:15px; margin-bottom:3px; }
+  .slot .sinfo { color:var(--muted); font-size:13px; margin-bottom:10px; }
+  .slot .setat { color:var(--warn); font-size:12.5px; margin-bottom:10px; }
+  .abtns { display:flex; gap:8px; flex-wrap:wrap; }
+  .abtn { border:1px solid var(--line); background:#0e1312; color:var(--ink); padding:8px 14px; border-radius:9px; cursor:pointer; font-size:13.5px; font-family:inherit; }
+  .abtn.oui { background:var(--accent); color:#04140d; border-color:var(--accent); font-weight:650; }
+  .abtn.non:hover { border-color:var(--bad); color:var(--bad); }
+  .decale-inline { display:none; gap:8px; margin-top:10px; align-items:center; flex-wrap:wrap; }
+  .decale-inline input { background:var(--cardbg); border:1px solid var(--line); border-radius:9px; color:var(--ink); padding:8px 10px; font-family:inherit; }
+  .jour { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:0.05em; margin:18px 0 8px; }
+  .pl { display:flex; gap:10px; align-items:center; background:var(--cardbg); border:1px solid var(--line); border-radius:11px; padding:10px 14px; margin-bottom:7px; font-size:13.5px; }
+  .pl.grise { opacity:0.45; }
+  .pl .h { font-weight:700; font-variant-numeric:tabular-nums; min-width:44px; }
+  .pl .conf { margin-left:auto; }
+
   .form { max-width:560px; }
   .types { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:18px; }
   .types button { border:1px solid var(--line); background:var(--cardbg); color:var(--ink); padding:12px 6px; border-radius:11px; cursor:pointer; font-size:13.5px; font-family:inherit; }
@@ -147,7 +165,7 @@
       <button data-page="dashboard">Dashboard</button>
       <button data-page="pipeline">Pipeline</button>
       <button data-page="prospects">Prospects</button>
-      <button data-page="rdv">Rendez-vous <span class="badge green" id="bRdv" style="display:none"></span></button>
+      <button data-page="planning">Planning <span class="badge red" id="bPlan" style="display:none"></span></button>
       <button data-page="appels">Appels</button>
       <button data-page="relances">Relances <span class="badge red" id="bRel" style="display:none"></span></button>
       <button data-page="kpi">KPI</button>
@@ -212,10 +230,7 @@
             <div class="field" id="rappelBlock" style="display:none"><label>À rappeler le</label><input type="date" id="inDateRappel"></div>
           </div>
           <div id="suiteBlock" style="display:none">
-            <div class="row2">
-              <div class="field"><label>Quand ?</label><input type="datetime-local" id="inSuiteLe"></div>
-              <div class="field"><label>Avec qui ?</label><select id="inRdvAvec"></select></div>
-            </div>
+            <div class="field"><label>Quand ? (le RDV part ensuite au closer de référence)</label><input type="datetime-local" id="inSuiteLe"></div>
             <div class="field"><label>Fiche prospect (objectif, budget, objection probable)</label><textarea id="inFiche"></textarea></div>
           </div>
         </div>
@@ -291,7 +306,17 @@
     </section>
 
     <section class="page" id="page-prospects"><div class="tscroll" id="prospectsT"></div></section>
-    <section class="page" id="page-rdv"><div class="tscroll" id="rdv"></div></section>
+
+    <section class="page" id="page-planning">
+      <div id="aprendre"></div>
+      <div id="propositions"></div>
+      <h2>Emploi du temps <span style="color:var(--muted);font-weight:400">(grisé = en attente, plein = confirmé)</span></h2>
+      <div class="controls" style="margin-bottom:12px">
+        <button id="planMoi">Moi</button>
+        <button id="planTous" class="active">Toute l'équipe</button>
+      </div>
+      <div id="planning"></div>
+    </section>
     <section class="page" id="page-appels"><div class="tscroll" id="appels"></div></section>
     <section class="page" id="page-relances"><div class="tscroll" id="relances"></div></section>
 
