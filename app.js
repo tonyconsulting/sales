@@ -10,7 +10,7 @@ try {
 // Clé PUBLIQUE de signature des notifications (la privée est côté serveur)
 const VAPID_PUB = "BBefpGJrlJu2jhuahy0XnidzpnE5nfZ84kRh3YueXISXD036WLlbQu50vebuJcKKiF05xz5Cj_C__Qa8wc_YWNQ";
 
-let MOI = null, EQUIPE = [], RECORDS = [], RDVS = [], PERIOD = "1j", TYPE = "Setting", PLANFILTRE = "tous", VUEQUIPE = "toutes", VUEMOI = "equipe", PENDING_RDV = null, PENDING_PROSPECT = "", PENDING_TYPE = "";
+let MOI = null, EQUIPE = [], RECORDS = [], RDVS = [], PERIOD = "1j", TYPE = "Setting", PLANFILTRE = "tous", VUEQUIPE = "toutes", VUEMOI = "equipe", PENDING_RDV = null, PENDING_PROSPECT = "", PENDING_TYPE = "", PENDING_TEL = "", PENDING_TEL_PROSPECT = "";
 const NOM_EQUIPE = { kelian: "Team Kélian", mila: "Team Mila" };
 const chipEquipe = e => (MOI && MOI.role === "admin" && e) ? `<span class="pill ${e === "mila" ? "teamM" : "teamK"}" title="${NOM_EQUIPE[e] || e}">${e === "mila" ? "M" : "K"}</span> ` : "";
 
@@ -427,6 +427,7 @@ function render() {
     showPage("log"); resetForm(); setType(b.dataset.type);
     el("inProspect").value = b.dataset.nom === "?" ? "" : b.dataset.nom;
     if (String(b.dataset.contact).startsWith("@")) el("inInsta").value = b.dataset.contact;
+    else if (b.dataset.contact) { PENDING_TEL = b.dataset.contact; PENDING_TEL_PROSPECT = b.dataset.nom || ""; }
     if (b.dataset.source) el("inSource").value = b.dataset.source;
     el("toast").textContent = "Pré-rempli pour la relance de " + (b.dataset.nom || "?") + " — choisis le résultat et enregistre.";
     el("toast").style.display = "block";
@@ -497,10 +498,11 @@ function fermeTiroir() {
 }
 
 // ----- Chips : un tap au lieu d'un menu déroulant -----
-const CHIP_SELECTS = ["inResSetting", "inCause", "inResVente", "inCauseV", "inSource", "inOffreV", "inPaiementV", "inQuiPres", "inQuiClose", "inVenteMoi"];
-const CHIP_TOGGLE = ["inSource", "inOffreV", "inPaiementV", "inVenteMoi"]; // optionnels : re-tap = désélection
+const CHIP_SELECTS = ["inResSetting", "inCause", "inResVente", "inCauseV", "inSource", "inOffreV", "inQuiPres", "inQuiClose", "inVenteMoi"];
+const CHIP_TOGGLE = ["inSource", "inOffreV", "inVenteMoi"]; // optionnels : re-tap = désélection
 function buildChips(id) {
   const sel = el(id);
+  if (!sel) return;
   let box = document.getElementById("chips-" + id);
   if (!box) {
     box = document.createElement("div");
@@ -636,6 +638,8 @@ function resetForm() {
   PENDING_RDV = null;
   PENDING_PROSPECT = "";
   PENDING_TYPE = "";
+  PENDING_TEL = "";
+  PENDING_TEL_PROSPECT = "";
   document.querySelectorAll("#logForm input, #logForm textarea").forEach(i => i.value = "");
   document.querySelectorAll("#logForm select").forEach(sel => { if (sel.id !== "inQui") sel.value = ""; });
   el("inDate").value = todayLocal();
@@ -648,6 +652,8 @@ async function submitForm(e) {
   const c = { type: TYPE, prospect: el("inProspect").value.trim() };
   if (!c.prospect) return alert("Le prospect est obligatoire.");
   c.instagram = el("inInsta").value.trim();
+  // Prospect historique identifié par téléphone : on transmet son numéro
+  if (!c.instagram && PENDING_TEL && cleTxt(c.prospect) === cleTxt(PENDING_TEL_PROSPECT)) c.telephone = PENDING_TEL;
   if (!c.instagram && TYPE === "Vente" && el("inResVente").value === "Closé") {
     if (!confirm("Pas d'Instagram : cette vente ne sera pas reliée à la fiche du prospect. Enregistrer quand même ?")) return;
   }
@@ -710,6 +716,7 @@ async function submitForm(e) {
   el("submitBtn").textContent = "Enregistrement…";
   try {
     const r = await call("log", { call: c });
+    if (CLOSES_VUS && r.id) CLOSES_VUS.add(r.id); // pas de cha-ching pour sa propre saisie
     resetForm();
     el("toast").textContent = r.rdv_erreur ? "Call enregistré, MAIS le RDV n'a pas pu être créé au planning — préviens Tony (" + r.rdv_erreur + ")."
       : !r.rdv ? "Call enregistré."
@@ -735,37 +742,67 @@ async function chargeRappels() {
   try {
     const d = await call("rappels_list");
     const rows = d.rappels || [];
-    z.innerHTML = `<div class="sinfo" style="margin-bottom:14px;color:var(--muted)">Notifications envoyées automatiquement avant chaque RDV (vérification toutes les 5 minutes). Balises utilisables dans le message : {prospect} {heure} {type} {insta}</div>` +
+    z.innerHTML = `<div class="sinfo" style="margin-bottom:14px;color:var(--muted)">Notifications envoyées automatiquement avant chaque RDV (vérification toutes les 5 minutes, délai minimum 5). Balises utilisables dans le message : {prospect} {heure} {type} {insta}</div>` +
       rows.map(g => `
       <div class="slot" data-rid="${g.id}">
-        <div class="stitre">${CIBLE_LABEL[g.cible] || esc(g.cible)}${g.seulement_statut === "ouvert" ? " — seulement si le RDV n'a pas de preneur" : ""}</div>
         <div class="row2">
-          <div class="field"><label>Minutes avant le RDV (240 = 4 h)</label><input type="number" min="1" class="rg-delai" value="${g.delai_min}"></div>
+          <div class="field"><label>Destinataire</label>
+            <select class="rg-cible">
+              <option value="assigne"${g.cible === "assigne" ? " selected" : ""}>Celui qui a le RDV</option>
+              <option value="setter"${g.cible === "setter" ? " selected" : ""}>Le setter</option>
+              <option value="admin"${g.cible === "admin" ? " selected" : ""}>Toi (admin)</option>
+            </select></div>
+          <div class="field"><label>Condition</label>
+            <select class="rg-statut">
+              <option value=""${g.seulement_statut ? "" : " selected"}>RDV confirmés</option>
+              <option value="ouvert"${g.seulement_statut === "ouvert" ? " selected" : ""}>Seulement RDV sans preneur</option>
+            </select></div>
+        </div>
+        <div class="row2">
+          <div class="field"><label>Minutes avant le RDV (240 = 4 h, min 5)</label><input type="number" min="5" max="10080" class="rg-delai" value="${g.delai_min}"></div>
           <div class="field"><label>État</label><select class="rg-actif"><option value="oui"${g.actif ? " selected" : ""}>Actif</option><option value="non"${g.actif ? "" : " selected"}>Coupé</option></select></div>
         </div>
-        <div class="field"><label>Message</label><textarea class="rg-msg">${esc(g.message)}</textarea></div>
-        <div class="abtns"><button class="abtn oui rg-save">Enregistrer</button></div>
+        <div class="field"><label>Message (300 caractères max)</label><textarea class="rg-msg" maxlength="300">${esc(g.message)}</textarea></div>
+        <div class="abtns"><button class="abtn oui rg-save">Enregistrer</button><button class="abtn non rg-del">Supprimer</button></div>
       </div>`).join("") +
       `<div class="abtns" style="margin-top:6px"><button class="abtn" id="rgAjout">Ajouter un rappel</button></div>`;
     z.querySelectorAll(".rg-save").forEach(b => b.addEventListener("click", async () => {
+      if (b.disabled) return;
       const sl = b.closest(".slot");
+      // même normalisation que le serveur, réécrite à l'écran : affiché = stocké
+      const delai = Math.max(5, Math.min(10080, Number(sl.querySelector(".rg-delai").value) || 60));
+      sl.querySelector(".rg-delai").value = delai;
+      const msg = sl.querySelector(".rg-msg").value.slice(0, 300);
+      sl.querySelector(".rg-msg").value = msg;
+      b.disabled = true;
       b.textContent = "Enregistrement…";
       try {
         await call("rappels_save", { rappel: {
           id: sl.dataset.rid,
-          delai_min: Number(sl.querySelector(".rg-delai").value),
+          delai_min: delai,
           actif: sl.querySelector(".rg-actif").value === "oui",
-          message: sl.querySelector(".rg-msg").value
+          message: msg,
+          cible: sl.querySelector(".rg-cible").value,
+          seulement_statut: sl.querySelector(".rg-statut").value
         } });
         b.textContent = "Enregistré";
-        setTimeout(() => { b.textContent = "Enregistrer"; }, 2000);
-      } catch (e) { alert(e.message); b.textContent = "Enregistrer"; }
+        setTimeout(() => { b.textContent = "Enregistrer"; b.disabled = false; }, 1500);
+      } catch (e) { alert(e.message); b.textContent = "Enregistrer"; b.disabled = false; }
     }));
-    el("rgAjout").addEventListener("click", async () => {
+    z.querySelectorAll(".rg-del").forEach(b => b.addEventListener("click", async () => {
+      if (!confirm("Supprimer ce rappel ? Plus aucune notification de ce type ne partira.")) return;
+      try { await call("rappels_delete", { id: b.closest(".slot").dataset.rid }); chargeRappels(); }
+      catch (e) { alert(e.message); }
+    }));
+    el("rgAjout").addEventListener("click", async (ev) => {
+      const b = ev.currentTarget;
+      if (b.disabled) return;
+      b.disabled = true;
+      b.textContent = "Ajout…";
       try {
         await call("rappels_save", { rappel: { delai_min: 60, message: "Dans 1 h : {type} avec {prospect} à {heure}.", actif: true, cible: "assigne" } });
         chargeRappels();
-      } catch (e) { alert(e.message); }
+      } catch (e) { alert(e.message); b.disabled = false; b.textContent = "Ajouter un rappel"; }
     });
   } catch (e) { z.innerHTML = `<div class="empty">Impossible de charger : ${esc(e.message)}</div>`; }
 }
@@ -838,7 +875,7 @@ let AUDIOCTX = null, CLOSES_VUS = null;
 function debloqueAudio() {
   try {
     AUDIOCTX = AUDIOCTX || new (window.AudioContext || window.webkitAudioContext)();
-    if (AUDIOCTX.state === "suspended") AUDIOCTX.resume();
+    if (AUDIOCTX.state !== "running") AUDIOCTX.resume();
   } catch (_) {}
 }
 function chaChing() {
@@ -947,9 +984,9 @@ async function init() {
   el("planTous").addEventListener("click", () => { PLANFILTRE = "tous"; el("planTous").classList.add("active"); el("planMoi").classList.remove("active"); render(); });
   el("refresh").addEventListener("click", loadData);
   el("logForm").addEventListener("submit", submitForm);
-  document.addEventListener("click", debloqueAudio, { once: true });
+  document.addEventListener("click", debloqueAudio);
   initNotifs().catch(() => {});
-  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") loadData(); });
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { debloqueAudio(); loadData(); } });
   await loadData();
   setInterval(() => { if (document.visibilityState === "visible") loadData(); }, 10 * 60 * 1000);
 }
