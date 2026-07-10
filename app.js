@@ -222,24 +222,7 @@ function renderPlanning(today) {
       }
       if (act === "log-resultat") {
         const r = RDVS.find(x => x.id === id);
-        if (!r) return;
-        const t = r.type === "Setting" ? "Setting" : "Vente";
-        showPage("log"); resetForm(); setType(t);
-        el("inProspect").value = r.prospect || "";
-        el("inInsta").value = r.instagram || "";
-        el("inSource").value = r.source || "";
-        if (r.assigne_a && [...el("inQuiClose").options].some(o => o.value === r.assigne_a)) el("inQuiClose").value = r.assigne_a;
-        if (r.assigne_a && [...el("inQuiPres").options].some(o => o.value === r.assigne_a)) el("inQuiPres").value = r.assigne_a;
-        if (MOI.role === "admin" && r.assigne_a && [...el("inQui").options].some(o => o.value === r.assigne_a)) {
-          el("inQui").value = r.assigne_a;
-          el("inQui").dispatchEvent(new Event("change"));
-        }
-        majChips();
-        PENDING_RDV = r.id;
-        PENDING_PROSPECT = r.prospect || "";
-        el("toast").textContent = "Pré-rempli depuis le RDV de " + (r.prospect || "?") + " — choisis le résultat et enregistre.";
-        el("toast").style.display = "block";
-        setTimeout(() => { el("toast").style.display = "none"; }, 5000);
+        if (r) prefillLog(r);
         return;
       }
       if (act === "rdv_propose") {
@@ -346,15 +329,39 @@ function render() {
       }).join("")
     : "";
 
+  // Menu « Résultat… » sur les lignes dont le RDV est passé (visible
+  // seulement pour celui qui a calé / pris le RDV, et l'admin)
+  const maintenant = new Date().toISOString();
+  const rdvsEchus = rdvsVisibles().filter(r => r.statut === "confirme" && r.quand <= maintenant &&
+    (MOI.role === "admin" || r.assigne_a === MOI.nom || r.setter === MOI.nom));
+  const rdvEchuDe = x => rdvsEchus
+    .filter(r => (r.instagram && x.contact && cleTxt(r.instagram) === cleTxt(x.contact)) ||
+                 (r.telephone && x.contact && cleTxt(r.telephone) === cleTxt(x.contact)) ||
+                 (x.nom && cleTxt(r.prospect) === cleTxt(x.nom)))
+    .sort((a, c) => a.quand.localeCompare(c.quand))[0];
+
   el("prospectsT").innerHTML = s.prospects.length
     ? tableHTML(
-        [{ t: "Prospect" }, { t: "Contact" }, { t: "Source" }, { t: "État" }, { t: "Dernier contact" }, { t: "Vendu", n: 1 }, { t: "Encaissé", n: 1 }],
-        s.prospects.map(x => [
-          { t: esc(x.nom || "?") }, { t: esc(x.contact) }, { t: esc(x.source || "–") },
-          { t: `<span class="pill ${ETAT_PILL[x.etat] || ""}">${esc(x.etat)}</span>` },
-          { t: esc(x.dernier) }, { t: eur(x.vendu), n: 1 }, { t: eur(x.encaisse), n: 1 }
-        ]))
+        [{ t: "Prospect" }, { t: "Contact" }, { t: "Source" }, { t: "État" }, { t: "" }, { t: "Dernier contact" }, { t: "Vendu", n: 1 }, { t: "Encaissé", n: 1 }],
+        s.prospects.map(x => {
+          const rp = rdvEchuDe(x);
+          const quick = rp
+            ? `<select class="quickres" data-rdv="${rp.id}"><option value="">${rp.type === "Setting" ? "Résultat du setting…" : "Résultat de la vente…"}</option>` +
+              (rp.type === "Setting" ? ["No-show", "Non abouti", "RDV de vente calé"] : ["Closé", "Pas closé", "No-show", "À relancer"])
+                .map(o => `<option>${o}</option>`).join("") + `</select>`
+            : "";
+          return [
+            { t: esc(x.nom || "?") }, { t: esc(x.contact) }, { t: esc(x.source || "–") },
+            { t: `<span class="pill ${ETAT_PILL[x.etat] || ""}">${esc(x.etat)}</span>` },
+            { t: quick },
+            { t: esc(x.dernier) }, { t: eur(x.vendu), n: 1 }, { t: eur(x.encaisse), n: 1 }
+          ];
+        }))
     : `<div class="empty">Aucun prospect identifié.</div>`;
+  document.querySelectorAll(".quickres").forEach(sel => sel.addEventListener("change", () => {
+    const r = RDVS.find(x => x.id === sel.dataset.rdv);
+    if (r && sel.value) prefillLog(r, sel.value);
+  }));
 
   const calls = recsVisibles().slice()
     .sort((a, c) => (SalesStats.dateOf(c) + (c.createdTime || "")).localeCompare(SalesStats.dateOf(a) + (a.createdTime || "")))
@@ -522,6 +529,32 @@ function autofillDepuisInsta() {
   if (!p) return;
   if (!el("inProspect").value && unSeul(p.noms)) el("inProspect").value = unSeul(p.noms);
   if (!el("inSource").value && unSeul(p.sources)) { el("inSource").value = unSeul(p.sources); majChips("inSource"); }
+}
+
+// Pré-remplit le formulaire depuis un RDV (bouton du planning ou menu
+// « Résultat… » des prospects) ; resultat optionnel = présélectionné.
+function prefillLog(r, resultat) {
+  const t = r.type === "Setting" ? "Setting" : "Vente";
+  showPage("log"); resetForm(); setType(t);
+  el("inProspect").value = r.prospect || "";
+  el("inInsta").value = r.instagram || "";
+  el("inSource").value = r.source || "";
+  if (r.assigne_a && [...el("inQuiClose").options].some(o => o.value === r.assigne_a)) el("inQuiClose").value = r.assigne_a;
+  if (r.assigne_a && [...el("inQuiPres").options].some(o => o.value === r.assigne_a)) el("inQuiPres").value = r.assigne_a;
+  if (MOI.role === "admin" && r.assigne_a && [...el("inQui").options].some(o => o.value === r.assigne_a)) {
+    el("inQui").value = r.assigne_a;
+    el("inQui").dispatchEvent(new Event("change"));
+  }
+  if (resultat) el(t === "Setting" ? "inResSetting" : "inResVente").value = resultat;
+  majChips();
+  majConditionnels();
+  PENDING_RDV = r.id;
+  PENDING_PROSPECT = r.prospect || "";
+  el("toast").textContent = resultat
+    ? "Pré-rempli pour " + (r.prospect || "?") + " (" + resultat + ") — complète s'il manque un détail et enregistre."
+    : "Pré-rempli depuis le RDV de " + (r.prospect || "?") + " — choisis le résultat et enregistre.";
+  el("toast").style.display = "block";
+  setTimeout(() => { el("toast").style.display = "none"; }, 5000);
 }
 
 // ----- Formulaire -----
