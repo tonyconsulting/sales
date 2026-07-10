@@ -144,6 +144,7 @@
       const k = keyOf(r);
       if (!k) return;
       if (!st[k]) st[k] = { cale: false, vu: false, enVente: false, relance: false, close: false, perdu: false,
+                            enVenteLe: "", relanceLe: "", perduLe: "",
                             nom: "", contact: "", source: "", dernier: "", vendu: 0, encaisse: 0, relanceEur: 0 };
       const s = st[k], f = r.fields;
       const d = dateOf(r);
@@ -155,20 +156,27 @@
         const res = f[F.resSetting];
         if (res === SET_CALE) s.cale = true;
         if (res === SET_NOSHOW) s.cale = true;
-        if (res === SET_NONABOUTI) { s.vu = true; if ((f[F.cause] || "") !== "À rappeler") s.perdu = true; else s.relance = true; }
-        if (res === SET_PREZ || res === SET_CLOSING || res === SET_VENTE) { s.vu = true; s.enVente = true; }
+        if (res === SET_NONABOUTI) {
+          s.vu = true;
+          if ((f[F.cause] || "") !== "À rappeler") { s.perdu = true; if (d > s.perduLe) s.perduLe = d; }
+          else { s.relance = true; if (d > s.relanceLe) s.relanceLe = d; }
+        }
+        if (res === SET_PREZ || res === SET_CLOSING || res === SET_VENTE) { s.vu = true; s.enVente = true; if (d > s.enVenteLe) s.enVenteLe = d; }
       }
       if (estVente(r)) {
         const res = resVente(f);
         if (res === "Closé") { s.close = true; s.vendu += num(f[F.montant]); }
-        if (res === "Pas closé") s.perdu = true;
-        if (res === "À relancer") { s.relance = true; s.relanceEur += num(f[F.montant]); }
+        if (res === "Pas closé") { s.perdu = true; if (d > s.perduLe) s.perduLe = d; }
+        if (res === "À relancer") { s.relance = true; if (d > s.relanceLe) s.relanceLe = d; s.relanceEur += num(f[F.montant]); }
         s.encaisse += num(f[F.encaisse]);
       }
       if (isType(r, "Paiement")) s.encaisse += num(f[F.encaisse]);
     });
     Object.values(st).forEach(s => {
-      s.etat = s.close ? "Closé" : s.relance ? "À relancer" : s.enVente ? "RDV de vente"
+      // Un « Pas closé » / non abouti POSTÉRIEUR éteint le RDV de vente ou la relance
+      const enVenteActif = s.enVente && (!s.perdu || s.enVenteLe > s.perduLe);
+      const relanceActive = s.relance && (!s.perdu || s.relanceLe > s.perduLe);
+      s.etat = s.close ? "Closé" : relanceActive ? "À relancer" : enVenteActif ? "RDV de vente"
         : s.perdu ? "Perdu" : s.vu ? "Vu en setting" : s.cale ? "Setting calé" : "Contacté";
     });
     return st;
