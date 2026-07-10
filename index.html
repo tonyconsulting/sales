@@ -197,10 +197,9 @@
     <section class="page" id="page-log">
       <div class="toast" id="toast">Call enregistré.</div>
       <form class="form" id="logForm" autocomplete="off">
-        <div class="types" id="typeBtns">
+        <div class="types" id="typeBtns" style="grid-template-columns:repeat(3,1fr)">
           <button type="button" data-t="Setting" class="active">Setting</button>
-          <button type="button" data-t="Prez">Prez</button>
-          <button type="button" data-t="Closing">Closing</button>
+          <button type="button" data-t="Vente">Vente (prez + closing)</button>
           <button type="button" data-t="Paiement">Paiement</button>
         </div>
         <div class="field" id="fQuiAdmin" style="display:none"><label>Qui (admin)</label><select id="inQui"></select></div>
@@ -210,13 +209,10 @@
         <div class="field"><label>Prospect (prénom + nom) *</label><input id="inProspect" required></div>
         <div class="row2">
           <div class="field"><label>Instagram</label><input id="inInsta" placeholder="@pseudo"></div>
-          <div class="field"><label>Téléphone (si pas d'Insta)</label><input id="inTel" inputmode="tel"></div>
-        </div>
-        <div class="row2">
-          <div class="field"><label>Source</label>
-            <select id="inSource"><option value=""></option><option>Contenu Instagram</option><option>Contenu TikTok</option><option>Recommandation</option><option>Autre</option></select>
-          </div>
           <div class="field"><label>Date</label><input type="date" id="inDate"></div>
+        </div>
+        <div class="field"><label>Source</label>
+          <select id="inSource"><option value=""></option><option>Contenu Instagram</option><option>Contenu TikTok</option><option>Recommandation</option><option>Autre</option></select>
         </div>
 
         <div data-only="Setting">
@@ -226,8 +222,7 @@
               <option>Calé (à venir)</option>
               <option>No-show</option>
               <option>Non abouti</option>
-              <option>Part en prez</option>
-              <option>Part en closing</option>
+              <option>RDV de vente calé</option>
             </select>
           </div>
           <div id="caleBlock" style="display:none">
@@ -245,44 +240,28 @@
           </div>
         </div>
 
-        <div data-only="Prez" style="display:none">
-          <div class="field"><label>Résultat de la prez *</label>
-            <select id="inResPres"><option value=""></option><option>Closé</option><option>Pas closé</option><option>No-show</option><option>À relancer</option></select>
+        <div data-only="Vente" style="display:none">
+          <div class="row2">
+            <div class="field"><label>Présentation faite par</label><select id="inQuiPres"></select></div>
+            <div class="field"><label>Closing fait par</label><select id="inQuiClose"></select></div>
           </div>
-          <div id="closePBlock" style="display:none">
+          <div class="field"><label>Résultat de l'appel *</label>
+            <select id="inResVente"><option value=""></option><option>Closé</option><option>Pas closé</option><option>No-show</option><option>À relancer</option></select>
+          </div>
+          <div id="closeVBlock" style="display:none">
             <div class="row2">
-              <div class="field"><label>Offre</label><select id="inOffreP"><option value=""></option><option>Accompagnement</option><option>Autre</option></select></div>
-              <div class="field"><label>Paiement</label><select id="inPaiementP"><option value=""></option><option>Comptant</option><option>Acompte</option></select></div>
+              <div class="field"><label>Offre</label><select id="inOffreV"><option value=""></option><option>Accompagnement</option><option>Autre</option></select></div>
+              <div class="field"><label>Paiement</label><select id="inPaiementV"><option value=""></option><option>Comptant</option><option>Acompte</option></select></div>
             </div>
             <div class="row2">
-              <div class="field"><label>Montant total (€)</label><input type="number" id="inMontantP" min="0" step="1"></div>
-              <div class="field"><label>Encaissé aujourd'hui (€)</label><input type="number" id="inEncaisseP" min="0" step="1"></div>
+              <div class="field"><label>Montant total (€)</label><input type="number" id="inMontantV" min="0" step="1"></div>
+              <div class="field"><label>Encaissé aujourd'hui (€)</label><input type="number" id="inEncaisseV" min="0" step="1"></div>
             </div>
           </div>
-          <div class="field" id="causePBlock" style="display:none"><label>Cause *</label>
-            <select id="inCauseP"><option value=""></option><option>Pas intéressé</option><option>Pas le budget</option><option>Réfléchit</option><option>Autre</option></select>
+          <div class="field" id="causeVBlock" style="display:none"><label>Cause *</label>
+            <select id="inCauseV"><option value=""></option><option>Pas intéressé</option><option>Pas le budget</option><option>Réfléchit</option><option>Autre</option></select>
           </div>
-          <div class="field" id="relancePBlock" style="display:none"><label>À relancer le</label><input type="date" id="inDateRelanceP"></div>
-        </div>
-
-        <div data-only="Closing" style="display:none">
-          <div class="field"><label>Résultat du closing *</label>
-            <select id="inResClosing"><option value=""></option><option>Closé</option><option>Pas closé</option><option>No-show</option><option>À relancer</option></select>
-          </div>
-          <div id="closeCBlock" style="display:none">
-            <div class="row2">
-              <div class="field"><label>Offre</label><select id="inOffreC"><option value=""></option><option>Accompagnement</option><option>Autre</option></select></div>
-              <div class="field"><label>Paiement</label><select id="inPaiementC"><option value=""></option><option>Comptant</option><option>Acompte</option></select></div>
-            </div>
-            <div class="row2">
-              <div class="field"><label>Montant total (€)</label><input type="number" id="inMontantC" min="0" step="1"></div>
-              <div class="field"><label>Encaissé aujourd'hui (€)</label><input type="number" id="inEncaisseC" min="0" step="1"></div>
-            </div>
-          </div>
-          <div class="field" id="causeCBlock" style="display:none"><label>Cause *</label>
-            <select id="inCauseC"><option value=""></option><option>Pas intéressé</option><option>Pas le budget</option><option>Réfléchit</option><option>Autre</option></select>
-          </div>
-          <div class="field" id="relanceCBlock" style="display:none"><label>À relancer le</label><input type="date" id="inDateRelanceC"></div>
+          <div class="field" id="relanceVBlock" style="display:none"><label>À relancer le</label><input type="date" id="inDateRelanceV"></div>
         </div>
 
         <div data-only="Paiement" style="display:none">
