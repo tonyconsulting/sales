@@ -167,7 +167,7 @@
         const res = resVente(f);
         if (res === "Closé") { s.close = true; s.vendu += num(f[F.montant]); }
         if (res === "Pas closé") { s.perdu = true; if (dts > s.perduLe) s.perduLe = dts; }
-        if (res === "À relancer") { s.relance = true; if (dts > s.relanceLe) s.relanceLe = dts; s.relanceEur += num(f[F.montant]); }
+        if (res === "À relancer") { s.relance = true; if (dts > s.relanceLe) { s.relanceLe = dts; s.relanceEur = num(f[F.montant]) || s.relanceEur; } }
         s.encaisse += num(f[F.encaisse]);
       }
       if (isType(r, "Paiement")) s.encaisse += num(f[F.encaisse]);
@@ -177,7 +177,7 @@
       // (un « Pas closé » éteint la relance / le RDV de vente ANTÉRIEURS,
       //  et un nouveau calage ressuscite un prospect perdu)
       const enVenteActif = s.enVente && (!s.perdu || s.enVenteLe > s.perduLe);
-      const relanceActive = s.relance && (!s.perdu || s.relanceLe > s.perduLe) && (!s.enVente || s.relanceLe >= s.enVenteLe);
+      const relanceActive = s.relance && (!s.perdu || s.relanceLe > s.perduLe) && (!s.enVente || s.relanceLe >= s.enVenteLe) && (!s.cale || s.relanceLe >= s.caleLe);
       const vuActif = s.vu && (!s.perdu || s.vuLe > s.perduLe);
       const caleActif = s.cale && (!s.perdu || s.caleLe > s.perduLe);
       s.etat = s.close ? "Closé" : relanceActive ? "À relancer" : enVenteActif ? "RDV de vente"
@@ -231,13 +231,6 @@
 
     const st = prospectStates(all);
     const prospects = Object.values(st).sort((a, c) => c.dernier.localeCompare(a.dernier));
-
-    // Reste à encaisser : closés dont le montant dépasse les encaissements cumulés (acomptes non soldés)
-    const resteListe = prospects
-      .filter(x => x.etat === "Closé" && x.vendu > x.encaisse)
-      .map(x => ({ prospect: x.nom || x.contact, contact: x.contact, du: x.vendu - x.encaisse }))
-      .sort((a, c) => c.du - a.du);
-    const resteTotal = resteListe.reduce((a, x) => a + x.du, 0);
 
     // Relances dues : uniquement les prospects dont l'état ACTUEL est
     // « À relancer » (un closing, un nouveau RDV ou un abandon postérieurs
@@ -337,7 +330,6 @@
       today, bounds: b,
       matin: { rdvJour: rdvJour.length, encaisse30, relancesAFaire: relances.length },
       global, people,
-      reste: { total: resteTotal, liste: resteListe },
       relances, rdvJour, rdvAVenir,
       pipeline: pi, prospects,
       delais: {
