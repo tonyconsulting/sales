@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Sales</title>
+<style>
+  :root {
+    --bg:#0b0e0d; --cardbg:#121816; --line:#1f2a26; --side:#0d1210;
+    --ink:#e6edea; --muted:#8b968f; --accent:#34d399; --accent-dim:#123326;
+    --bad:#f87171; --warn:#fbbf24;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:var(--bg); color:var(--ink); font:15px/1.45 -apple-system, "Helvetica Neue", "Segoe UI", Roboto, Arial, sans-serif; }
+  .app { display:flex; min-height:100vh; }
+
+  aside { width:212px; flex:none; background:var(--side); border-right:1px solid var(--line); padding:22px 12px; position:sticky; top:0; height:100vh; display:flex; flex-direction:column; }
+  .logo { font-size:20px; font-weight:750; letter-spacing:-0.02em; padding:0 10px 6px; }
+  .logo span { color:var(--accent); }
+  .hello { color:var(--muted); font-size:12.5px; padding:0 10px 16px; }
+  nav { display:flex; flex-direction:column; gap:3px; }
+  nav button { display:flex; align-items:center; justify-content:space-between; gap:8px; width:100%; text-align:left; background:none; border:none; color:var(--muted); font-size:14px; padding:9px 12px; border-radius:9px; cursor:pointer; font-family:inherit; }
+  nav button:hover { color:var(--ink); background:#121a17; }
+  nav button.active { background:var(--accent-dim); color:var(--accent); font-weight:600; }
+  .badge { font-size:11px; font-weight:700; padding:1px 7px; border-radius:99px; background:#1a221f; color:var(--muted); }
+  .badge.red { background:#3a1214; color:var(--bad); }
+  .badge.green { background:var(--accent-dim); color:var(--accent); }
+  .aside-foot { margin-top:auto; padding:10px 12px; color:var(--muted); font-size:11.5px; line-height:1.5; }
+
+  main { flex:1; padding:26px 30px; min-width:0; }
+  header { display:flex; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; gap:12px; }
+  h1 { font-size:22px; letter-spacing:-0.02em; }
+  .sub { color:var(--muted); font-size:13px; margin-top:2px; }
+  .controls { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .controls button { border:1px solid var(--line); background:var(--cardbg); padding:6px 13px; border-radius:9px; cursor:pointer; font-size:13px; color:var(--ink); font-family:inherit; }
+  .controls button.active { background:var(--accent); color:#04140d; border-color:var(--accent); font-weight:600; }
+  .status { display:flex; align-items:center; gap:7px; color:var(--muted); font-size:12.5px; margin:12px 0 22px; }
+  .dot { width:8px; height:8px; border-radius:99px; background:var(--accent); box-shadow:0 0 8px var(--accent); flex:none; }
+  .dot.err { background:var(--bad); box-shadow:0 0 8px var(--bad); }
+
+  .page { display:none; }
+  .page.on { display:block; }
+
+  .grid3 { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:14px; margin-bottom:14px; }
+  .card { background:var(--cardbg); border:1px solid var(--line); border-radius:14px; padding:20px; }
+  .kpi .label { color:var(--muted); font-size:13px; margin-bottom:8px; }
+  .kpi .value { font-size:40px; font-weight:750; letter-spacing:-0.03em; }
+  .kpi .hint { color:var(--muted); font-size:12px; margin-top:8px; }
+  .strip { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:14px; margin-bottom:10px; }
+  .strip .card { padding:14px 16px; }
+  .strip .label { color:var(--muted); font-size:12px; margin-bottom:4px; }
+  .strip .value { font-size:22px; font-weight:700; }
+  h2 { font-size:15px; margin:26px 0 12px; font-weight:650; }
+
+  table { width:100%; border-collapse:collapse; background:var(--cardbg); border:1px solid var(--line); border-radius:14px; overflow:hidden; }
+  th, td { text-align:left; padding:10px 13px; border-bottom:1px solid var(--line); font-size:13.5px; }
+  th { background:#0e1312; color:var(--muted); font-weight:600; font-size:11.5px; text-transform:uppercase; letter-spacing:0.05em; }
+  tr:last-child td { border-bottom:none; }
+  td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }
+  .empty { color:var(--muted); font-size:13.5px; padding:16px; background:var(--cardbg); border:1px dashed var(--line); border-radius:14px; }
+  .pill { display:inline-block; padding:2px 9px; border-radius:99px; font-size:12px; background:var(--accent-dim); color:var(--accent); }
+  .pill.grey { background:#1a221f; color:var(--muted); }
+  .pill.red { background:#3a1214; color:var(--bad); }
+  .pill.amber { background:#332508; color:var(--warn); }
+  .late { color:var(--bad); font-weight:600; }
+  .today { color:var(--accent); font-weight:600; }
+  .err-banner { background:#2a1214; border:1px solid #7f1d1d; color:var(--bad); padding:14px; border-radius:12px; margin-bottom:18px; display:none; }
+  details summary { cursor:pointer; color:var(--accent); font-size:12.5px; }
+  details div { white-space:pre-wrap; color:var(--muted); font-size:12.5px; padding-top:6px; }
+  .del { background:none; border:none; color:var(--muted); cursor:pointer; font-size:12px; }
+  .del:hover { color:var(--bad); }
+
+  .pipe { background:var(--cardbg); border:1px solid var(--line); border-radius:14px; padding:18px 20px; }
+  .pipe .row { display:grid; grid-template-columns:110px 1fr 46px; align-items:center; gap:14px; margin:11px 0; }
+  .pipe .name { color:var(--muted); font-size:13px; }
+  .pipe .eur { color:var(--muted); font-size:11px; }
+  .pipe .bar { height:8px; border-radius:99px; background:#1a221f; overflow:hidden; }
+  .pipe .bar i { display:block; height:100%; border-radius:99px; background:var(--accent); }
+  .pipe .bar i.grey { background:#3a463f; }
+  .pipe .bar i.red { background:var(--bad); }
+  .pipe .n { text-align:right; font-weight:700; font-variant-numeric:tabular-nums; }
+
+  .kanban { display:grid; grid-template-columns:repeat(auto-fit,minmax(175px,1fr)); gap:12px; align-items:start; }
+  .kol { background:var(--cardbg); border:1px solid var(--line); border-radius:14px; padding:12px; }
+  .kol h3 { font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:0.05em; display:flex; justify-content:space-between; margin-bottom:10px; }
+  .kcard { background:#0e1312; border:1px solid var(--line); border-radius:10px; padding:9px 11px; margin-bottom:8px; }
+  .kcard .kn { font-size:13px; font-weight:600; }
+  .kcard .kc { font-size:11.5px; color:var(--muted); }
+  .kcard .ke { font-size:11.5px; color:var(--accent); }
+  .kmore { color:var(--muted); font-size:12px; text-align:center; padding-top:2px; }
+
+  .charts { display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:14px; }
+  .chart-title { color:var(--muted); font-size:13px; margin-bottom:14px; }
+  .bars { display:flex; align-items:flex-end; gap:8px; height:110px; }
+  .bcol { flex:1; display:flex; flex-direction:column; justify-content:flex-end; align-items:center; gap:5px; height:100%; }
+  .bv { font-size:10px; color:var(--muted); white-space:nowrap; }
+  .b { width:100%; background:var(--accent); border-radius:4px 4px 0 0; min-height:2px; opacity:0.85; }
+  .bl { font-size:10px; color:var(--muted); }
+  .foot { color:var(--muted); font-size:12px; margin-top:28px; line-height:1.6; }
+
+  /* Formulaire de log */
+  .form { max-width:560px; }
+  .types { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:18px; }
+  .types button { border:1px solid var(--line); background:var(--cardbg); color:var(--ink); padding:12px 6px; border-radius:11px; cursor:pointer; font-size:13.5px; font-family:inherit; }
+  .types button.active { background:var(--accent); color:#04140d; border-color:var(--accent); font-weight:650; }
+  .field { margin-bottom:14px; }
+  .field label { display:block; color:var(--muted); font-size:12.5px; margin-bottom:5px; }
+  .field input, .field select, .field textarea {
+    width:100%; background:var(--cardbg); border:1px solid var(--line); border-radius:10px;
+    color:var(--ink); padding:10px 12px; font-size:15px; font-family:inherit;
+  }
+  .field textarea { min-height:74px; resize:vertical; }
+  .field input:focus, .field select:focus, .field textarea:focus { outline:none; border-color:var(--accent); }
+  .row2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .submit { width:100%; background:var(--accent); color:#04140d; border:none; border-radius:11px; padding:13px; font-size:15.5px; font-weight:700; cursor:pointer; margin-top:6px; font-family:inherit; }
+  .submit:disabled { opacity:0.5; cursor:default; }
+  .toast { display:none; background:var(--accent-dim); color:var(--accent); border:1px solid #1d5c40; padding:12px; border-radius:11px; margin-bottom:14px; font-weight:600; }
+  .lock { max-width:420px; margin:16vh auto; text-align:center; padding:0 20px; }
+  .lock h1 { margin-bottom:10px; }
+  .lock p { color:var(--muted); }
+
+  @media (max-width:860px) {
+    .app { flex-direction:column; }
+    aside { width:100%; height:auto; position:static; padding:12px; }
+    nav { flex-direction:row; overflow-x:auto; }
+    nav button { white-space:nowrap; }
+    .aside-foot, .hello { display:none; }
+    main { padding:16px; }
+    .kpi .value { font-size:32px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="lock" id="lock" style="display:none">
+  <h1>Sales<span style="color:var(--accent)">.</span></h1>
+  <p id="lockMsg">Lien invalide. Demande ton lien personnel à Tony.</p>
+</div>
+
+<div class="app" id="app" style="display:none">
+  <aside>
+    <div class="logo">Sales<span>.</span></div>
+    <div class="hello" id="hello"></div>
+    <nav id="nav">
+      <button data-page="log">Log un call</button>
+      <button data-page="dashboard">Dashboard</button>
+      <button data-page="pipeline">Pipeline</button>
+      <button data-page="prospects">Prospects</button>
+      <button data-page="rdv">Rendez-vous <span class="badge green" id="bRdv" style="display:none"></span></button>
+      <button data-page="appels">Appels</button>
+      <button data-page="relances">Relances <span class="badge red" id="bRel" style="display:none"></span></button>
+      <button data-page="kpi">KPI</button>
+    </nav>
+    <div class="aside-foot">Un call pas loggé est un call qui n'existe pas. Instagram du prospect à chaque fois.</div>
+  </aside>
+
+  <main>
+    <header>
+      <div><h1 id="pageTitle">Log un call</h1><div class="sub" id="pageSub"></div></div>
+      <div class="controls" id="periodCtrls">
+        <button data-p="mois" class="active">Ce mois</button>
+        <button data-p="mois-1">Mois dernier</button>
+        <button data-p="7j">7 jours</button>
+        <button data-p="tout">Tout</button>
+        <button id="refresh">Rafraîchir</button>
+      </div>
+    </header>
+    <div class="status"><span class="dot" id="dot"></span><span id="updated">Chargement…</span></div>
+    <div class="err-banner" id="err"></div>
+
+    <section class="page" id="page-log">
+      <div class="toast" id="toast">Call enregistré.</div>
+      <form class="form" id="logForm" autocomplete="off">
+        <div class="types" id="typeBtns">
+          <button type="button" data-t="Setting" class="active">Setting</button>
+          <button type="button" data-t="Présentation">Présentation</button>
+          <button type="button" data-t="Closing">Closing</button>
+          <button type="button" data-t="Paiement">Paiement</button>
+        </div>
+        <div class="field" id="fQuiAdmin" style="display:none"><label>Qui (admin)</label><select id="inQui"></select></div>
+        <div class="field"><label>Prospect (prénom + nom) *</label><input id="inProspect" required></div>
+        <div class="row2">
+          <div class="field"><label>Instagram</label><input id="inInsta" placeholder="@pseudo"></div>
+          <div class="field"><label>Téléphone (si pas d'Insta)</label><input id="inTel" inputmode="tel"></div>
+        </div>
+        <div class="row2">
+          <div class="field"><label>Source</label>
+            <select id="inSource"><option value=""></option><option>Contenu Instagram</option><option>Contenu TikTok</option><option>Recommandation</option><option>Autre</option></select>
+          </div>
+          <div class="field"><label>Date du call</label><input type="date" id="inDate"></div>
+        </div>
+
+        <div data-only="Setting">
+          <div class="field"><label>Résultat du setting *</label>
+            <select id="inResSetting"><option value=""></option><option>RDV posé</option><option>Non qualifié</option><option>Pas répondu</option><option>À rappeler</option></select>
+          </div>
+          <div id="rdvBlock" style="display:none">
+            <div class="row2">
+              <div class="field"><label>RDV prévu le</label><input type="datetime-local" id="inRdvLe"></div>
+              <div class="field"><label>RDV avec</label><select id="inRdvAvec"></select></div>
+            </div>
+            <div class="field"><label>Fiche prospect (objectif, budget, objection probable)</label><textarea id="inFiche"></textarea></div>
+          </div>
+        </div>
+
+        <div data-only="Présentation" style="display:none">
+          <div class="field"><label>Résultat de la présentation *</label>
+            <select id="inResPres"><option value=""></option><option>Passe en closing</option><option>No-show</option><option>Pas intéressé</option><option>À relancer</option></select>
+          </div>
+        </div>
+
+        <div data-only="Closing" style="display:none">
+          <div class="field"><label>Résultat du closing *</label>
+            <select id="inResClosing"><option value=""></option><option>Closé</option><option>Pas closé</option><option>No-show</option><option>À relancer</option></select>
+          </div>
+          <div class="row2">
+            <div class="field"><label>Offre vendue</label><select id="inOffre"><option value=""></option><option>Accompagnement</option><option>Autre</option></select></div>
+            <div class="field"><label>Type de paiement</label><select id="inPaiement"><option value=""></option><option>Comptant</option><option>2x</option><option>3x</option><option>Acompte</option></select></div>
+          </div>
+          <div class="row2">
+            <div class="field"><label>Montant total (€)</label><input type="number" id="inMontant" min="0" step="1"></div>
+            <div class="field"><label>Encaissé aujourd'hui (€)</label><input type="number" id="inEncaisse" min="0" step="1"></div>
+          </div>
+          <div class="field" id="relanceBlock" style="display:none"><label>Date de relance</label><input type="date" id="inDateRelance"></div>
+        </div>
+
+        <div data-only="Paiement" style="display:none">
+          <div class="row2">
+            <div class="field"><label>Encaissé aujourd'hui (€) *</label><input type="number" id="inEncaissePmt" min="0" step="1"></div>
+            <div class="field"><label>Type de paiement</label><select id="inPaiementPmt"><option value=""></option><option>Comptant</option><option>2x</option><option>3x</option><option>Acompte</option></select></div>
+          </div>
+        </div>
+
+        <div class="field"><label>Notes</label><textarea id="inNotes"></textarea></div>
+        <button class="submit" id="submitBtn" type="submit">Enregistrer le call</button>
+      </form>
+    </section>
+
+    <section class="page" id="page-dashboard">
+      <div class="grid3">
+        <div class="card kpi"><div class="label">RDV posés hier</div><div class="value" id="k1">–</div><div class="hint" id="k1h"></div></div>
+        <div class="card kpi"><div class="label">Encaissé ce mois</div><div class="value" id="k2">–</div><div class="hint" id="k2h"></div></div>
+        <div class="card kpi"><div class="label">Relances à faire aujourd'hui</div><div class="value" id="k3">–</div><div class="hint" id="k3h"></div></div>
+      </div>
+      <div class="strip" id="strip"></div>
+      <h2>RDV du jour</h2>
+      <div id="rdvjour"></div>
+    </section>
+
+    <section class="page" id="page-pipeline">
+      <div id="pipe"></div>
+      <h2>Prospects par état</h2>
+      <div class="kanban" id="kanban"></div>
+    </section>
+
+    <section class="page" id="page-prospects"><div id="prospectsT"></div></section>
+    <section class="page" id="page-rdv"><div id="rdv"></div></section>
+    <section class="page" id="page-appels"><div id="appels"></div></section>
+    <section class="page" id="page-relances"><div id="relances"></div></section>
+
+    <section class="page" id="page-kpi">
+      <div class="charts" id="charts"></div>
+      <h2>Par personne (période sélectionnée)</h2>
+      <div id="people"></div>
+      <h2>Par source</h2>
+      <div id="sources"></div>
+    </section>
+
+    <div class="foot">
+      Show-up, pipeline et « closé par source » sont rapprochés par Instagram (ou téléphone à défaut).
+      L'encaissé additionne les closings et les paiements (échéances 2x/3x, virements reçus plus tard).
+    </div>
+  </main>
+</div>
+
+<script src="stats.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
