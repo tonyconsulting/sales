@@ -272,6 +272,31 @@
       else pi.contacte++;
     });
 
+    // --- Vitesse : délai (jours) entre le calage et la réalisation, par prospect ---
+    const delais = { setting: [], vente: [] };
+    const parCle = {};
+    all.forEach(r => {
+      const k = keyOf(r);
+      if (!k) return;
+      (parCle[k] = parCle[k] || []).push(r);
+    });
+    const jours = (a, c) => Math.round((new Date(c + "T12:00:00") - new Date(a + "T12:00:00")) / 86400000);
+    Object.values(parCle).forEach(recs => {
+      const calesS = recs.filter(r => isType(r, "Setting") && r.fields[F.resSetting] === SET_CALE).map(dateOf).sort();
+      const faitsS = recs.filter(r => isType(r, "Setting") && r.fields[F.resSetting] && r.fields[F.resSetting] !== SET_CALE).map(dateOf).sort();
+      calesS.forEach(dc => {
+        const df = faitsS.find(x => x >= dc);
+        if (df && df >= b.from && df <= b.to) delais.setting.push(jours(dc, df));
+      });
+      const calesV = recs.filter(r => isType(r, "Setting") && (r.fields[F.resSetting] === SET_VENTE || r.fields[F.resSetting] === SET_PREZ || r.fields[F.resSetting] === SET_CLOSING)).map(dateOf).sort();
+      const faitsV = recs.filter(r => estVente(r) && resVente(r.fields)).map(dateOf).sort();
+      calesV.forEach(dc => {
+        const df = faitsV.find(x => x >= dc);
+        if (df && df >= b.from && df <= b.to) delais.vente.push(jours(dc, df));
+      });
+    });
+    const moyenne = a => a.length ? Math.round(a.reduce((x, y) => x + y, 0) / a.length * 10) / 10 : null;
+
     const b30 = periodBounds("30j", now);
     let encaisse30 = 0;
     all.forEach(r => {
@@ -286,6 +311,10 @@
       reste: { total: resteTotal, liste: resteListe },
       relances, rdvJour, rdvAVenir,
       pipeline: pi, prospects,
+      delais: {
+        setting: { moy: moyenne(delais.setting), n: delais.setting.length },
+        vente: { moy: moyenne(delais.vente), n: delais.vente.length }
+      },
       hebdo: weekly(all, now, 8),
       totalRecords: all.length
     };
