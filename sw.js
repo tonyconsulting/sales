@@ -5,7 +5,6 @@ self.addEventListener("push", (e) => {
   e.waitUntil(self.registration.showNotification(d.title || "Kairós", {
     body: d.body || "",
     icon: "icon-192.png",
-    badge: "icon-192.png",
     data: { url: d.url || "./" }
   }));
 });
