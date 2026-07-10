@@ -680,13 +680,25 @@ async function loadData() {
   }
 }
 
+// Écran verrouillé : on peut coller son lien (ou juste le code) pour entrer
+function brancheLock() {
+  el("lock").style.display = "block";
+  el("btnCodeLock").addEventListener("click", () => {
+    const v = el("inCodeLock").value.trim();
+    const m = v.match(/[?&]c=([^&\s]+)/);
+    const code = m ? decodeURIComponent(m[1]) : v;
+    if (!code) return;
+    try { localStorage.setItem("sales_code", code); } catch (_) {}
+    location.href = location.pathname + "?c=" + encodeURIComponent(code);
+  });
+}
 async function init() {
-  if (!CODE) { el("lock").style.display = "block"; return; }
+  if (!CODE) { brancheLock(); return; }
   try {
     const cfg = await call("config");
     MOI = cfg.moi; EQUIPE = cfg.equipe || [];
   } catch (e) {
-    el("lock").style.display = "block";
+    brancheLock();
     el("lockMsg").textContent = e.message === "code invalide"
       ? "Lien invalide ou désactivé. Demande ton lien personnel à Tony."
       : "Connexion impossible : " + e.message;
