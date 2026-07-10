@@ -27,7 +27,7 @@ const heureLocale = iso => { const d = new Date(iso); return pad(d.getHours()) +
 const quandJoli = (iso, today) => jolieDate(jourLocal(iso), today) + " à " + heureLocale(iso);
 
 const PAGES = {
-  log: ["Log un call", "Après chaque call, 10 secondes"],
+  log: ["Log un call", "Après chaque call, 20 secondes"],
   dashboard: ["Dashboard", "Vue d'ensemble"],
   pipeline: ["Pipeline", "Suivez vos deals"],
   prospects: ["Prospects", "Tous les prospects identifiés"],
@@ -722,7 +722,8 @@ async function init() {
     el("inQui").addEventListener("change", majEquipeForm);
     majEquipeForm();
   }
-  CHIP_SELECTS.forEach(buildChips);
+  // (chips désactivés le 10/07 : Tony préfère les menus déroulants —
+  //  pour les remettre : CHIP_SELECTS.forEach(buildChips);)
   // « Je fais l'appel moi-même » : seulement pour ceux qui peuvent closer
   if (!(MOI.role === "admin" || roleMatchFront("Vente", MOI.role_vente))) el("fVenteMoi").style.display = "none";
   el("inProspect").addEventListener("change", autofillProspect);
