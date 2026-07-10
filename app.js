@@ -10,7 +10,7 @@ try {
 // Clé PUBLIQUE de signature des notifications (la privée est côté serveur)
 const VAPID_PUB = "BBefpGJrlJu2jhuahy0XnidzpnE5nfZ84kRh3YueXISXD036WLlbQu50vebuJcKKiF05xz5Cj_C__Qa8wc_YWNQ";
 
-let MOI = null, EQUIPE = [], RECORDS = [], RDVS = [], PERIOD = "1j", TYPE = "Setting", PLANFILTRE = "tous", VUEQUIPE = "toutes", VUEMOI = "equipe", PENDING_RDV = null, PENDING_PROSPECT = "";
+let MOI = null, EQUIPE = [], RECORDS = [], RDVS = [], PERIOD = "1j", TYPE = "Setting", PLANFILTRE = "tous", VUEQUIPE = "toutes", VUEMOI = "equipe", PENDING_RDV = null, PENDING_PROSPECT = "", PENDING_TYPE = "";
 const NOM_EQUIPE = { kelian: "Team Kélian", mila: "Team Mila" };
 const chipEquipe = e => (MOI && MOI.role === "admin" && e) ? `<span class="pill ${e === "mila" ? "teamM" : "teamK"}" title="${NOM_EQUIPE[e] || e}">${e === "mila" ? "M" : "K"}</span> ` : "";
 
@@ -71,8 +71,9 @@ async function call(action, extra) {
     headers: { "content-type": "application/json" },
     body: JSON.stringify(Object.assign({ code: CODE, action }, extra || {}))
   });
-  const j = await res.json();
-  if (!res.ok) throw new Error(j.error || ("erreur " + res.status));
+  let j = {};
+  try { j = await res.json(); } catch (_) { /* réponse non-JSON = panne côté serveur */ }
+  if (!res.ok) throw new Error(j.error || ("erreur " + res.status + " — réessaie dans une minute"));
   return j;
 }
 
@@ -99,6 +100,11 @@ function etatTexte(r) {
 
 function renderPlanning(today) {
   const moi = MOI.nom, admin = MOI.role === "admin";
+  // Préserver une saisie d'horaire en cours (le re-render toutes les 10 min l'effacerait)
+  const inlinesOuverts = [...document.querySelectorAll(".decale-inline")].filter(x => x.style.display === "flex").map(x => x.id);
+  const saisiesInline = {};
+  document.querySelectorAll(".decale-inline input").forEach(i => { if (i.value) saisiesInline[i.id] = i.value; });
+  const retardOuvert = !!document.querySelector("details.retard[open]");
   const actifs = rdvsVisibles().filter(r => r.statut !== "annule" && r.statut !== "fait");
   const nonConfirmes = actifs.filter(r => r.statut !== "confirme");
 
@@ -226,6 +232,10 @@ function renderPlanning(today) {
           </div>`).join("")).join("")
     : `<div class="empty">Aucun RDV à venir${PLANFILTRE === "moi" ? " pour toi" : ""}.</div>`;
 
+  inlinesOuverts.forEach(id => { const d = el(id); if (d) d.style.display = "flex"; });
+  Object.entries(saisiesInline).forEach(([id, v]) => { const i = el(id); if (i) i.value = v; });
+  if (retardOuvert) { const det = document.querySelector("details.retard"); if (det) det.open = true; }
+
   document.querySelectorAll("[data-act]").forEach(b => b.addEventListener("click", async () => {
     const id = b.dataset.id, act = b.dataset.act;
     try {
@@ -352,11 +362,18 @@ function render() {
   const maintenant = new Date().toISOString();
   const rdvsEchus = rdvsVisibles().filter(r => r.statut === "confirme" && r.quand <= maintenant &&
     (MOI.role === "admin" || r.assigne_a === MOI.nom || r.setter === MOI.nom));
-  const rdvEchuDe = x => rdvsEchus
-    .filter(r => (r.instagram && x.contact && cleTxt(r.instagram) === cleTxt(x.contact)) ||
-                 (r.telephone && x.contact && cleTxt(r.telephone) === cleTxt(x.contact)) ||
-                 (x.nom && cleTxt(r.prospect) === cleTxt(x.nom)))
-    .sort((a, c) => a.quand.localeCompare(c.quand))[0];
+  const nrmInsta = v => String(v || "").trim().toLowerCase().replace(/^@/, "").replace(/\s+/g, "");
+  const nrmTel = v => String(v || "").replace(/\D/g, "").slice(-9);
+  const rdvEchuDe = x => {
+    const estTel = x.contact && !String(x.contact).trim().startsWith("@");
+    const xi = estTel ? "" : nrmInsta(x.contact);
+    const xp = estTel ? nrmTel(x.contact) : "";
+    return rdvsEchus
+      .filter(r => (xi && nrmInsta(r.instagram) === xi) ||
+                   (xp && nrmTel(r.telephone) === xp) ||
+                   (!x.contact && x.nom && cleTxt(r.prospect) === cleTxt(x.nom)))
+      .sort((a, c) => a.quand.localeCompare(c.quand))[0];
+  };
 
   el("prospectsT").innerHTML = s.prospects.length
     ? tableHTML(
@@ -396,7 +413,7 @@ function render() {
         }))
     : `<div class="empty">Aucun call loggé pour l'instant.</div>`;
   document.querySelectorAll(".del").forEach(b => b.addEventListener("click", async () => {
-    if (!confirm("Supprimer ce call ? (uniquement pour corriger une erreur de saisie)")) return;
+    if (!confirm("Supprimer ce call ? S'il avait créé un RDV au planning, le RDV sera annulé aussi.")) return;
     try { await call("delete", { id: b.dataset.id }); await loadData(); } catch (e) { alert(e.message); }
   }));
 
@@ -427,10 +444,10 @@ function render() {
   const names = Object.keys(s.people).sort();
   el("people").innerHTML = names.length
     ? tableHTML(
-        [{ t: "Qui" }, { t: "Settings calés", n: 1 }, { t: "Effectués", n: 1 }, { t: "Show", n: 1 }, { t: "No-show", n: 1 }, { t: "Non aboutis", n: 1 }, { t: "RDV de vente", n: 1 }, { t: "Prez faites", n: 1 }, { t: "Closings faits", n: 1 }, { t: "Closés", n: 1 }, { t: "Taux close", n: 1 }, { t: "Vendu", n: 1 }, { t: "Encaissé", n: 1 }],
+        [{ t: "Qui" }, { t: "Settings calés", n: 1 }, { t: "Effectués", n: 1 }, { t: "Show", n: 1 }, { t: "No-show setting", n: 1 }, { t: "No-show vente", n: 1 }, { t: "Non aboutis", n: 1 }, { t: "RDV de vente", n: 1 }, { t: "Prez faites", n: 1 }, { t: "Closings faits", n: 1 }, { t: "Closés", n: 1 }, { t: "Taux close", n: 1 }, { t: "Vendu", n: 1 }, { t: "Encaissé", n: 1 }],
         names.map(n => { const x = s.people[n]; return [
           { t: esc(n) }, { t: x.cales, n: 1 }, { t: x.effectues, n: 1 },
-          { t: fmtPct(x.txShow), n: 1 }, { t: x.noShows + x.ventesNoShow, n: 1 }, { t: x.nonAboutis, n: 1 },
+          { t: fmtPct(x.txShow), n: 1 }, { t: x.noShows, n: 1 }, { t: x.ventesNoShow, n: 1 }, { t: x.nonAboutis, n: 1 },
           { t: x.versVente, n: 1 }, { t: x.presFaites, n: 1 }, { t: x.ventesEff, n: 1 },
           { t: x.closes, n: 1 },
           { t: fmtPct(x.txClose), n: 1 },
@@ -555,6 +572,7 @@ function prefillLog(r, resultat) {
   el("inProspect").value = r.prospect || "";
   el("inInsta").value = r.instagram || "";
   el("inSource").value = r.source || "";
+  el("inDate").value = jourLocal(r.quand); // le call a eu lieu le jour du RDV, pas le jour de la saisie
   if (r.assigne_a && [...el("inQuiClose").options].some(o => o.value === r.assigne_a)) el("inQuiClose").value = r.assigne_a;
   if (r.assigne_a && [...el("inQuiPres").options].some(o => o.value === r.assigne_a)) el("inQuiPres").value = r.assigne_a;
   if (MOI.role === "admin" && r.assigne_a && [...el("inQui").options].some(o => o.value === r.assigne_a)) {
@@ -566,6 +584,7 @@ function prefillLog(r, resultat) {
   majConditionnels();
   PENDING_RDV = r.id;
   PENDING_PROSPECT = r.prospect || "";
+  PENDING_TYPE = t;
   el("toast").textContent = resultat
     ? "Pré-rempli pour " + (r.prospect || "?") + " (" + resultat + ") — complète s'il manque un détail et enregistre."
     : "Pré-rempli depuis le RDV de " + (r.prospect || "?") + " — choisis le résultat et enregistre.";
@@ -574,10 +593,22 @@ function prefillLog(r, resultat) {
 }
 
 // ----- Formulaire -----
+// Champ « Équipe » admin : utile seulement si la personne créditée n'a pas
+// d'équipe (pour une Vente, c'est « Closing fait par » qui fait foi)
+function majEquipeForm() {
+  if (!MOI || MOI.role !== "admin") return;
+  const nom = TYPE === "Vente" ? el("inQuiClose").value : el("inQui").value;
+  const m = EQUIPE.find(x => x.nom === nom);
+  el("fEquipeAdmin").style.display = (m && m.equipe) ? "none" : "";
+}
 function setType(t) {
   TYPE = t;
   document.querySelectorAll("#typeBtns button").forEach(b => b.classList.toggle("active", b.dataset.t === t));
   document.querySelectorAll("[data-only]").forEach(x => { x.style.display = x.dataset.only === t ? "" : "none"; });
+  if (MOI && MOI.role === "admin") {
+    el("fQuiAdmin").style.display = t === "Vente" ? "none" : "";
+    majEquipeForm();
+  }
 }
 function todayLocal() {
   const d = new Date();
@@ -597,6 +628,7 @@ function majConditionnels() {
 function resetForm() {
   PENDING_RDV = null;
   PENDING_PROSPECT = "";
+  PENDING_TYPE = "";
   document.querySelectorAll("#logForm input, #logForm textarea").forEach(i => i.value = "");
   document.querySelectorAll("#logForm select").forEach(sel => { if (sel.id !== "inQui") sel.value = ""; });
   el("inDate").value = todayLocal();
@@ -609,12 +641,18 @@ async function submitForm(e) {
   const c = { type: TYPE, prospect: el("inProspect").value.trim() };
   if (!c.prospect) return alert("Le prospect est obligatoire.");
   c.instagram = el("inInsta").value.trim();
+  if (!c.instagram && (TYPE === "Paiement" || (TYPE === "Vente" && el("inResVente").value === "Closé"))) {
+    if (!confirm("Pas d'Instagram : ce call ne sera pas relié à la fiche du prospect (le reste à encaisser ne suivra pas). Enregistrer quand même ?")) return;
+  }
   c.source = el("inSource").value;
   c.date = el("inDate").value || todayLocal();
   c.notes = el("inNotes").value.trim();
   if (MOI.role === "admin") {
-    c.qui = el("inQui").value;
-    if (el("fEquipeAdmin").style.display !== "none") c.equipe = el("inEquipe").value;
+    if (TYPE !== "Vente") c.qui = el("inQui").value; // pour une Vente, « Closing fait par » fait foi
+    if (el("fEquipeAdmin").style.display !== "none") {
+      c.equipe = el("inEquipe").value;
+      if (!c.equipe) return alert("Choisis l'équipe du call.");
+    }
   }
 
   if (TYPE === "Setting") {
@@ -627,7 +665,10 @@ async function submitForm(e) {
     if (c.res_setting === "Non abouti") {
       c.cause = el("inCause").value;
       if (!c.cause) return alert("La cause est obligatoire.");
-      if (c.cause === "À rappeler" && el("inDateRappel").value) c.date_relance = el("inDateRappel").value;
+      if (c.cause === "À rappeler") {
+        if (!el("inDateRappel").value) return alert("Indique la date de rappel (sinon la relance ne sonnera jamais).");
+        c.date_relance = el("inDateRappel").value;
+      }
     }
     if (c.res_setting === "RDV de vente calé") {
       if (!el("inSuiteLe").value) return alert("Indique quand le RDV de vente est calé.");
@@ -635,7 +676,7 @@ async function submitForm(e) {
       c.fiche = el("inFiche").value.trim();
       if (el("inVenteMoi").value === "moi") c.vente_moi = true;
     }
-    if (PENDING_RDV && cleTxt(c.prospect) === cleTxt(PENDING_PROSPECT)) c.rdv_id = PENDING_RDV;
+    if (PENDING_RDV && TYPE === PENDING_TYPE && cleTxt(c.prospect) === cleTxt(PENDING_PROSPECT)) c.rdv_id = PENDING_RDV;
   }
   if (TYPE === "Vente") {
     c.res_closing = el("inResVente").value;
@@ -645,12 +686,20 @@ async function submitForm(e) {
     if (c.res_closing === "Closé") {
       c.offre = el("inOffreV").value;
       c.paiement = el("inPaiementV").value;
-      if (el("inMontantV").value) c.montant = Number(el("inMontantV").value);
+      if (!el("inMontantV").value) return alert("Indique le montant total de la vente.");
+      c.montant = Number(el("inMontantV").value);
       if (el("inEncaisseV").value) c.encaisse = Number(el("inEncaisseV").value);
+      if (c.encaisse === undefined && c.paiement === "Comptant") c.encaisse = c.montant; // comptant = payé en entier
+      if ((c.encaisse || 0) > c.montant &&
+          !confirm("Encaissé (" + c.encaisse + " €) supérieur au montant total (" + c.montant + " €). Enregistrer quand même ?")) return;
     }
     if (c.res_closing === "Pas closé") c.cause = el("inCauseV").value;
-    if (c.res_closing === "À relancer" && el("inDateRelanceV").value) c.date_relance = el("inDateRelanceV").value;
-    if (PENDING_RDV && cleTxt(c.prospect) === cleTxt(PENDING_PROSPECT)) c.rdv_id = PENDING_RDV;
+    if (c.res_closing === "À relancer") {
+      if (!el("inDateRelanceV").value) return alert("Indique la date de relance (sinon la relance ne sonnera jamais).");
+      c.date_relance = el("inDateRelanceV").value;
+      if (el("inMontantRelV").value) c.montant = Number(el("inMontantRelV").value);
+    }
+    if (PENDING_RDV && TYPE === PENDING_TYPE && cleTxt(c.prospect) === cleTxt(PENDING_PROSPECT)) c.rdv_id = PENDING_RDV;
   }
   if (TYPE === "Paiement") {
     if (!el("inEncaissePmt").value) return alert("Le montant encaissé est obligatoire.");
@@ -691,14 +740,20 @@ async function initNotifs() {
   if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
     zone.innerHTML = (iOS && !standalone)
       ? `<div class="slot"><div class="stitre">Recevoir les RDV en notification</div>
-         <div class="sinfo">Sur iPhone : bouton Partager de Safari → « Sur l'écran d'accueil ». Ouvre ensuite Sales depuis la nouvelle icône et reviens ici pour activer les notifications.</div></div>`
+         <div class="sinfo">Sur iPhone : bouton Partager de Safari → « Sur l'écran d'accueil ». Ouvre ensuite Kairós depuis la nouvelle icône et reviens ici pour activer les notifications.</div></div>`
       : "";
     return;
   }
   let reg;
   try { reg = await navigator.serviceWorker.register("sw.js"); }
   catch (_) { zone.innerHTML = ""; return; }
-  const sub = await reg.pushManager.getSubscription();
+  let sub = await reg.pushManager.getSubscription();
+  // Clés serveur changées = abonnement mort : on le jette pour réafficher le bouton
+  if (sub && sub.options && sub.options.applicationServerKey) {
+    const cle = btoa(String.fromCharCode(...new Uint8Array(sub.options.applicationServerKey)))
+      .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    if (cle !== VAPID_PUB) { try { await sub.unsubscribe(); } catch (_) {} sub = null; }
+  }
   if (sub && Notification.permission === "granted") {
     call("push_subscribe", { sub: sub.toJSON() }).catch(() => {});
     zone.innerHTML = `<div class="sinfo" style="margin-bottom:14px;color:var(--muted)">Notifications activées sur cet appareil.
@@ -707,8 +762,10 @@ async function initNotifs() {
       el("btnNotifTest").disabled = true;
       el("btnNotifTest").textContent = "Envoi…";
       try {
-        await call("push_test");
-        el("btnNotifTest").textContent = "Envoyée — elle arrive dans quelques secondes";
+        const r = await call("push_test");
+        el("btnNotifTest").textContent = r.envoyes
+          ? "Envoyée — elle arrive dans quelques secondes"
+          : "Aucun appareil abonné côté serveur — désactive puis réactive les notifications";
       } catch (e) {
         el("btnNotifTest").textContent = "Erreur : " + e.message;
       }
@@ -790,11 +847,8 @@ async function init() {
     el("inQui").innerHTML = EQUIPE.map(m => `<option${m.nom === MOI.nom ? " selected" : ""}>${esc(m.nom)}</option>`).join("");
     el("vueEquipe").style.display = "";
     el("vueEquipe").addEventListener("change", () => { VUEQUIPE = el("vueEquipe").value; render(); });
-    const majEquipeForm = () => {
-      const m = EQUIPE.find(x => x.nom === el("inQui").value);
-      el("fEquipeAdmin").style.display = (m && m.equipe) ? "none" : "";
-    };
     el("inQui").addEventListener("change", majEquipeForm);
+    el("inQuiClose").addEventListener("change", majEquipeForm);
     majEquipeForm();
   }
   // (chips désactivés le 10/07 : Tony préfère les menus déroulants —
@@ -816,6 +870,7 @@ async function init() {
   el("refresh").addEventListener("click", loadData);
   el("logForm").addEventListener("submit", submitForm);
   initNotifs().catch(() => {});
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") loadData(); });
   await loadData();
   setInterval(() => { if (document.visibilityState === "visible") loadData(); }, 10 * 60 * 1000);
 }
