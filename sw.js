@@ -2,7 +2,7 @@
 self.addEventListener("push", (e) => {
   let d = {};
   try { d = e.data ? e.data.json() : {}; } catch (_) {}
-  e.waitUntil(self.registration.showNotification(d.title || "Sales", {
+  e.waitUntil(self.registration.showNotification(d.title || "Kairós", {
     body: d.body || "",
     icon: "icon-192.png",
     badge: "icon-192.png",
