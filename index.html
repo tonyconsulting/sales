@@ -124,6 +124,10 @@
   .types { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:18px; }
   .types button { border:1px solid var(--line); background:var(--cardbg); color:var(--ink); padding:12px 6px; border-radius:11px; cursor:pointer; font-size:13.5px; font-family:inherit; }
   .types button.active { background:var(--accent); color:#04140d; border-color:var(--accent); font-weight:650; }
+  .chips { display:flex; flex-wrap:wrap; gap:8px; }
+  .chips button { border:1px solid var(--line); background:var(--cardbg); color:var(--ink); padding:9px 14px; border-radius:99px; cursor:pointer; font-size:13.5px; font-family:inherit; }
+  .chips button.active { background:var(--accent); color:#04140d; border-color:var(--accent); font-weight:650; }
+  select.chipified { display:none; }
   .field { margin-bottom:14px; }
   .field label { display:block; color:var(--muted); font-size:12.5px; margin-bottom:5px; }
   .field input, .field select, .field textarea {
@@ -206,9 +210,11 @@
         <div class="field" id="fEquipeAdmin" style="display:none"><label>Équipe (car ce membre n'en a pas)</label>
           <select id="inEquipe"><option value="kelian">Team Kélian</option><option value="mila">Team Mila</option></select>
         </div>
-        <div class="field"><label>Prospect (prénom + nom) *</label><input id="inProspect" required></div>
+        <div class="field"><label>Prospect (prénom + nom) *</label><input id="inProspect" list="dlProspects" required></div>
+        <datalist id="dlProspects"></datalist>
+        <datalist id="dlInsta"></datalist>
         <div class="row2">
-          <div class="field"><label>Instagram</label><input id="inInsta" placeholder="@pseudo"></div>
+          <div class="field"><label>Instagram</label><input id="inInsta" list="dlInsta" placeholder="@pseudo"></div>
           <div class="field"><label>Date</label><input type="date" id="inDate"></div>
         </div>
         <div class="field"><label>Source</label>
@@ -235,7 +241,10 @@
             <div class="field" id="rappelBlock" style="display:none"><label>À rappeler le</label><input type="date" id="inDateRappel"></div>
           </div>
           <div id="suiteBlock" style="display:none">
-            <div class="field"><label>Quand ? (le RDV part ensuite au closer de référence)</label><input type="datetime-local" id="inSuiteLe"></div>
+            <div class="field"><label>Quand ?</label><input type="datetime-local" id="inSuiteLe"></div>
+            <div class="field" id="fVenteMoi"><label>Par défaut le RDV part au dispatch de l'équipe — sauf si :</label>
+              <select id="inVenteMoi"><option value=""></option><option value="moi">Je fais l'appel de vente moi-même</option></select>
+            </div>
             <div class="field"><label>Fiche prospect (objectif, budget, objection probable)</label><textarea id="inFiche"></textarea></div>
           </div>
         </div>
@@ -275,8 +284,8 @@
 
     <section class="page" id="page-dashboard">
       <div class="grid3">
-        <div class="card kpi"><div class="label">RDV aujourd'hui</div><div class="value" id="k1">–</div><div class="hint">settings, prez et closings calés</div></div>
-        <div class="card kpi"><div class="label">Encaissé (30 jours)</div><div class="value" id="k2">–</div><div class="hint">prez + closings + soldes</div></div>
+        <div class="card kpi"><div class="label">RDV aujourd'hui</div><div class="value" id="k1">–</div><div class="hint">settings et appels de vente restants</div></div>
+        <div class="card kpi"><div class="label">Encaissé (30 jours)</div><div class="value" id="k2">–</div><div class="hint">ventes + soldes d'acomptes</div></div>
         <div class="card kpi"><div class="label">Relances à faire</div><div class="value" id="k3">–</div><div class="hint" id="k3h"></div></div>
       </div>
       <div class="strip" id="strip"></div>
@@ -317,7 +326,7 @@
 
     <div class="foot">
       Les prospects sont reliés par Instagram (ou téléphone à défaut) : remplissez-le à chaque call.
-      L'encaissé additionne prez, closings et soldes d'acomptes.
+      L'encaissé additionne les ventes et les soldes d'acomptes.
     </div>
   </main>
 </div>
