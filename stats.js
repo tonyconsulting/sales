@@ -144,40 +144,44 @@
       const k = keyOf(r);
       if (!k) return;
       if (!st[k]) st[k] = { cale: false, vu: false, enVente: false, relance: false, close: false, perdu: false,
-                            enVenteLe: "", relanceLe: "", perduLe: "",
+                            enVenteLe: "", relanceLe: "", perduLe: "", caleLe: "", vuLe: "",
                             nom: "", contact: "", source: "", dernier: "", vendu: 0, encaisse: 0, relanceEur: 0 };
       const s = st[k], f = r.fields;
       const d = dateOf(r);
+      const dts = d + "|" + (r.createdTime || ""); // départage au sein d'un même jour
       if (d > s.dernier) s.dernier = d;
       if (f[F.prospect]) s.nom = f[F.prospect];
       const c = contactOf(r); if (c) s.contact = c;
       if (isType(r, "Setting")) {
         if (!s.source && f[F.source]) s.source = f[F.source];
         const res = f[F.resSetting];
-        if (res === SET_CALE) s.cale = true;
-        if (res === SET_NOSHOW) s.cale = true;
+        if (res === SET_CALE || res === SET_NOSHOW) { s.cale = true; if (dts > s.caleLe) s.caleLe = dts; }
         if (res === SET_NONABOUTI) {
-          s.vu = true;
-          if ((f[F.cause] || "") !== "À rappeler") { s.perdu = true; if (d > s.perduLe) s.perduLe = d; }
-          else { s.relance = true; if (d > s.relanceLe) s.relanceLe = d; }
+          s.vu = true; if (dts > s.vuLe) s.vuLe = dts;
+          if ((f[F.cause] || "") !== "À rappeler") { s.perdu = true; if (dts > s.perduLe) s.perduLe = dts; }
+          else { s.relance = true; if (dts > s.relanceLe) s.relanceLe = dts; }
         }
-        if (res === SET_PREZ || res === SET_CLOSING || res === SET_VENTE) { s.vu = true; s.enVente = true; if (d > s.enVenteLe) s.enVenteLe = d; }
+        if (res === SET_PREZ || res === SET_CLOSING || res === SET_VENTE) { s.vu = true; if (dts > s.vuLe) s.vuLe = dts; s.enVente = true; if (dts > s.enVenteLe) s.enVenteLe = dts; }
       }
       if (estVente(r)) {
         const res = resVente(f);
         if (res === "Closé") { s.close = true; s.vendu += num(f[F.montant]); }
-        if (res === "Pas closé") { s.perdu = true; if (d > s.perduLe) s.perduLe = d; }
-        if (res === "À relancer") { s.relance = true; if (d > s.relanceLe) s.relanceLe = d; s.relanceEur += num(f[F.montant]); }
+        if (res === "Pas closé") { s.perdu = true; if (dts > s.perduLe) s.perduLe = dts; }
+        if (res === "À relancer") { s.relance = true; if (dts > s.relanceLe) s.relanceLe = dts; s.relanceEur += num(f[F.montant]); }
         s.encaisse += num(f[F.encaisse]);
       }
       if (isType(r, "Paiement")) s.encaisse += num(f[F.encaisse]);
     });
     Object.values(st).forEach(s => {
-      // Un « Pas closé » / non abouti POSTÉRIEUR éteint le RDV de vente ou la relance
+      // Les états s'arbitrent par chronologie : le plus récent l'emporte
+      // (un « Pas closé » éteint la relance / le RDV de vente ANTÉRIEURS,
+      //  et un nouveau calage ressuscite un prospect perdu)
       const enVenteActif = s.enVente && (!s.perdu || s.enVenteLe > s.perduLe);
-      const relanceActive = s.relance && (!s.perdu || s.relanceLe > s.perduLe);
+      const relanceActive = s.relance && (!s.perdu || s.relanceLe > s.perduLe) && (!s.enVente || s.relanceLe >= s.enVenteLe);
+      const vuActif = s.vu && (!s.perdu || s.vuLe > s.perduLe);
+      const caleActif = s.cale && (!s.perdu || s.caleLe > s.perduLe);
       s.etat = s.close ? "Closé" : relanceActive ? "À relancer" : enVenteActif ? "RDV de vente"
-        : s.perdu ? "Perdu" : s.vu ? "Vu en setting" : s.cale ? "Setting calé" : "Contacté";
+        : vuActif ? "Vu en setting" : caleActif ? "Setting calé" : s.perdu ? "Perdu" : "Contacté";
     });
     return st;
   }
@@ -235,21 +239,28 @@
       .sort((a, c) => c.du - a.du);
     const resteTotal = resteListe.reduce((a, x) => a + x.du, 0);
 
-    // Relances dues (hors prospects closés depuis)
-    const dejaCloses = new Set(Object.keys(st).filter(k => st[k].close));
-    const relances = all.filter(r => {
+    // Relances dues : uniquement les prospects dont l'état ACTUEL est
+    // « À relancer » (un closing, un nouveau RDV ou un abandon postérieurs
+    // éteignent la relance), une seule ligne par prospect (la plus récente)
+    const relParProspect = {};
+    all.forEach(r => {
       const f = r.fields;
       const rel = ((estVente(r) && resVente(f) === "À relancer") ||
                    (f[F.resSetting] === SET_NONABOUTI && f[F.cause] === "À rappeler"));
-      return rel && f[F.relance] && String(f[F.relance]).slice(0, 10) <= today;
-    }).filter(r => { const k = keyOf(r); return !(k && dejaCloses.has(k)); })
-      .map(r => ({
-        prospect: r.fields[F.prospect] || "?",
-        contact: contactOf(r),
-        date: (r.fields[F.relance] || "").slice(0, 10),
-        qui: r.fields[F.qui] || "?",
-        notes: r.fields[F.notes] || ""
-      })).sort((a, c) => a.date.localeCompare(c.date));
+      const dr = f[F.relance] ? String(f[F.relance]).slice(0, 10) : "";
+      if (!rel || !dr || dr > today) return;
+      const k = keyOf(r);
+      if (!k || !st[k] || st[k].etat !== "À relancer") return;
+      const cur = relParProspect[k];
+      if (!cur || dr > cur.date) relParProspect[k] = {
+        prospect: f[F.prospect] || st[k].nom || "?",
+        contact: contactOf(r) || st[k].contact,
+        date: dr,
+        qui: f[F.qui] || "?",
+        notes: f[F.notes] || ""
+      };
+    });
+    const relances = Object.values(relParProspect).sort((a, c) => a.date.localeCompare(c.date));
 
     // RDV à venir : settings calés + parts en prez/closing à date future (aujourd'hui inclus)
     const rdvAVenir = all.filter(r => {
@@ -259,7 +270,7 @@
       .map(r => ({
         jour: rdvDayLocal(r),
         heure: rdvTimeLocal(r),
-        quoi: r.fields[F.resSetting] === SET_CALE ? "Setting" : r.fields[F.resSetting] === SET_PREZ ? "Prez" : "Closing",
+        quoi: r.fields[F.resSetting] === SET_CALE ? "Setting" : r.fields[F.resSetting] === SET_PREZ ? "Prez" : r.fields[F.resSetting] === SET_CLOSING ? "Closing" : "Vente",
         prospect: r.fields[F.prospect] || "?",
         avec: r.fields[F.resSetting] === SET_CALE ? (r.fields[F.qui] || "?") : (r.fields[F.rdvAvec] || "?"),
         setter: r.fields[F.qui] || "?",
@@ -292,15 +303,23 @@
     Object.values(parCle).forEach(recs => {
       const calesS = recs.filter(r => isType(r, "Setting") && r.fields[F.resSetting] === SET_CALE).map(dateOf).sort();
       const faitsS = recs.filter(r => isType(r, "Setting") && r.fields[F.resSetting] && r.fields[F.resSetting] !== SET_CALE).map(dateOf).sort();
+      let iS = 0;
       calesS.forEach(dc => {
-        const df = faitsS.find(x => x >= dc);
-        if (df && df >= b.from && df <= b.to) delais.setting.push(jours(dc, df));
+        while (iS < faitsS.length && faitsS[iS] < dc) iS++;
+        if (iS < faitsS.length) {
+          const df = faitsS[iS++];
+          if (df >= b.from && df <= b.to) delais.setting.push(jours(dc, df));
+        }
       });
       const calesV = recs.filter(r => isType(r, "Setting") && (r.fields[F.resSetting] === SET_VENTE || r.fields[F.resSetting] === SET_PREZ || r.fields[F.resSetting] === SET_CLOSING)).map(dateOf).sort();
-      const faitsV = recs.filter(r => estVente(r) && resVente(r.fields)).map(dateOf).sort();
+      const faitsV = recs.filter(r => estVente(r) && resVente(r.fields) && resVente(r.fields) !== "No-show").map(dateOf).sort();
+      let iV = 0;
       calesV.forEach(dc => {
-        const df = faitsV.find(x => x >= dc);
-        if (df && df >= b.from && df <= b.to) delais.vente.push(jours(dc, df));
+        while (iV < faitsV.length && faitsV[iV] < dc) iV++;
+        if (iV < faitsV.length) {
+          const df = faitsV[iV++];
+          if (df >= b.from && df <= b.to) delais.vente.push(jours(dc, df));
+        }
       });
     });
     const moyenne = a => a.length ? Math.round(a.reduce((x, y) => x + y, 0) / a.length * 10) / 10 : null;
