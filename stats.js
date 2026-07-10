@@ -1,9 +1,10 @@
-// Moteur de calcul — modèle Tony (10/07) :
-// Setting : Calé (booké à l'avance) -> Effectué (show) ou No-show ;
-//   effectué -> Non abouti (avec cause) OU Part en prez OU Part en closing.
-// Prez = présentation + closing dans le MÊME appel (peut closer et encaisser).
-// Closing = call de closing dédié.
+// Moteur de calcul — modèle Tony (10/07 v2) :
+// Setting : Calé (booké) -> Effectué (show) ou No-show ;
+//   effectué -> Non abouti (avec cause) OU « RDV de vente calé ».
+// Vente = UN appel avec deux phases : présentation (qui_presentation)
+//   puis closing (qui) — possiblement deux personnes. Peut closer/encaisser.
 // Paiement = encaissement ultérieur (solde d'acompte).
+// (Les anciens types Prez/Closing restent lus pour compatibilité.)
 // Matching prospect : Instagram d'abord, téléphone en secours.
 
 (function (root, factory) {
@@ -31,7 +32,8 @@
     relance: "Date de relance",
     prospect: "Prospect",
     notes: "Notes",
-    cause: "Cause"
+    cause: "Cause",
+    quiPres: "Présentation par"
   };
 
   function pad(n) { return n < 10 ? "0" + n : "" + n; }
@@ -83,22 +85,27 @@
   const SET_CALE = "Calé (à venir)";
   const SET_NOSHOW = "No-show";
   const SET_NONABOUTI = "Non abouti";
-  const SET_PREZ = "Part en prez";
-  const SET_CLOSING = "Part en closing";
+  const SET_PREZ = "Part en prez";           // legacy
+  const SET_CLOSING = "Part en closing";     // legacy
+  const SET_VENTE = "RDV de vente calé";
+  function estVente(r) { return isType(r, "Vente") || isType(r, "Prez") || isType(r, "Présentation") || isType(r, "Closing"); }
+  function resVente(f) { return f["Résultat closing"] || f["Résultat présentation"]; }
 
   function statsVides() {
     return {
       cales: 0, effectues: 0, noShows: 0, nonAboutis: 0, causes: {},
-      versPrez: 0, versClosing: 0,
-      prezEff: 0, prezNoShow: 0, prezCloses: 0,
-      closEff: 0, closNoShow: 0, closCloses: 0,
+      versVente: 0, presFaites: 0,
+      ventesEff: 0, ventesNoShow: 0,
       closes: 0, vendu: 0, encaisse: 0
     };
   }
 
-  function accumule(S, r) {
+  // accumule(S, r) pour le global ; accumule(S, r, nom) pour une personne :
+  // le closing est crédité à « Qui », la phase de présentation à « Présentation par ».
+  function accumule(S, r, nom) {
     const f = r.fields;
-    if (isType(r, "Setting")) {
+    const pourMoi = !nom || f[F.qui] === nom;
+    if (isType(r, "Setting") && pourMoi) {
       const res = f[F.resSetting];
       if (res === SET_CALE) S.cales++;
       else if (res === SET_NOSHOW) S.noShows++;
@@ -106,31 +113,26 @@
         S.effectues++; S.nonAboutis++;
         const c = f[F.cause] || "Sans cause";
         S.causes[c] = (S.causes[c] || 0) + 1;
-      } else if (res === SET_PREZ) { S.effectues++; S.versPrez++; }
-      else if (res === SET_CLOSING) { S.effectues++; S.versClosing++; }
+      } else if (res === SET_PREZ || res === SET_CLOSING || res === SET_VENTE) { S.effectues++; S.versVente++; }
     }
-    if (isType(r, "Prez")) {
-      const res = f[F.resPres];
-      if (res === "No-show") S.prezNoShow++;
-      else if (res) S.prezEff++;
-      if (res === "Closé") { S.prezCloses++; S.closes++; S.vendu += num(f[F.montant]); }
-      S.encaisse += num(f[F.encaisse]);
+    if (estVente(r)) {
+      const res = resVente(f);
+      const pres = f[F.quiPres] || f[F.qui];
+      if ((!nom || pres === nom) && res && res !== "No-show") S.presFaites++;
+      if (pourMoi) {
+        if (res === "No-show") S.ventesNoShow++;
+        else if (res) S.ventesEff++;
+        if (res === "Closé") { S.closes++; S.vendu += num(f[F.montant]); }
+        S.encaisse += num(f[F.encaisse]);
+      }
     }
-    if (isType(r, "Closing")) {
-      const res = f[F.resClosing];
-      if (res === "No-show") S.closNoShow++;
-      else if (res) S.closEff++;
-      if (res === "Closé") { S.closCloses++; S.closes++; S.vendu += num(f[F.montant]); }
-      S.encaisse += num(f[F.encaisse]);
-    }
-    if (isType(r, "Paiement")) S.encaisse += num(f[F.encaisse]);
+    if (isType(r, "Paiement") && pourMoi) S.encaisse += num(f[F.encaisse]);
   }
 
   function finalise(S) {
     S.txShow = pct(S.effectues, S.effectues + S.noShows);
-    S.txAbouti = pct(S.versPrez + S.versClosing, S.effectues);
-    const callsVente = S.prezEff + S.closEff;
-    S.txClose = pct(S.closes, callsVente);
+    S.txAbouti = pct(S.versVente, S.effectues);
+    S.txClose = pct(S.closes, S.ventesEff);
     S.panier = S.closes ? Math.round(S.vendu / S.closes) : null;
     return S;
   }
@@ -141,7 +143,7 @@
     all.forEach(r => {
       const k = keyOf(r);
       if (!k) return;
-      if (!st[k]) st[k] = { cale: false, vu: false, enPrez: false, enClosing: false, relance: false, close: false, perdu: false,
+      if (!st[k]) st[k] = { cale: false, vu: false, enVente: false, relance: false, close: false, perdu: false,
                             nom: "", contact: "", source: "", dernier: "", vendu: 0, encaisse: 0, relanceEur: 0 };
       const s = st[k], f = r.fields;
       const d = dateOf(r);
@@ -154,19 +156,19 @@
         if (res === SET_CALE) s.cale = true;
         if (res === SET_NOSHOW) s.cale = true;
         if (res === SET_NONABOUTI) { s.vu = true; if ((f[F.cause] || "") !== "À rappeler") s.perdu = true; else s.relance = true; }
-        if (res === SET_PREZ) { s.vu = true; s.enPrez = true; }
-        if (res === SET_CLOSING) { s.vu = true; s.enClosing = true; }
+        if (res === SET_PREZ || res === SET_CLOSING || res === SET_VENTE) { s.vu = true; s.enVente = true; }
       }
-      if (isType(r, "Prez") || isType(r, "Closing")) {
-        const res = f[F.resPres] || f[F.resClosing];
+      if (estVente(r)) {
+        const res = resVente(f);
         if (res === "Closé") { s.close = true; s.vendu += num(f[F.montant]); }
         if (res === "Pas closé") s.perdu = true;
         if (res === "À relancer") { s.relance = true; s.relanceEur += num(f[F.montant]); }
+        s.encaisse += num(f[F.encaisse]);
       }
-      if (isType(r, "Prez") || isType(r, "Closing") || isType(r, "Paiement")) s.encaisse += num(f[F.encaisse]);
+      if (isType(r, "Paiement")) s.encaisse += num(f[F.encaisse]);
     });
     Object.values(st).forEach(s => {
-      s.etat = s.close ? "Closé" : s.relance ? "À relancer" : s.enClosing ? "En closing" : s.enPrez ? "En prez"
+      s.etat = s.close ? "Closé" : s.relance ? "À relancer" : s.enVente ? "RDV de vente"
         : s.perdu ? "Perdu" : s.vu ? "Vu en setting" : s.cale ? "Setting calé" : "Contacté";
     });
     return st;
@@ -187,8 +189,8 @@
       const w = weeks.find(w => d >= w.from && d <= w.to);
       if (!w) return;
       const f = r.fields;
-      if (isType(r, "Prez") || isType(r, "Closing") || isType(r, "Paiement")) w.encaisse += num(f[F.encaisse]);
-      if ((isType(r, "Prez") && f[F.resPres] === "Closé") || (isType(r, "Closing") && f[F.resClosing] === "Closé")) w.closes++;
+      if (estVente(r) || isType(r, "Paiement")) w.encaisse += num(f[F.encaisse]);
+      if (estVente(r) && resVente(f) === "Closé") w.closes++;
     });
     return weeks;
   }
@@ -202,11 +204,15 @@
 
     const global = statsVides();
     const people = {};
+    const noms = new Set();
     enPeriode.forEach(r => {
       accumule(global, r);
-      const qui = (r.fields && r.fields[F.qui]) || "?";
-      if (!people[qui]) people[qui] = statsVides();
-      accumule(people[qui], r);
+      if (r.fields[F.qui]) noms.add(r.fields[F.qui]);
+      if (r.fields[F.quiPres]) noms.add(r.fields[F.quiPres]);
+    });
+    noms.forEach(nom => {
+      people[nom] = statsVides();
+      enPeriode.forEach(r => accumule(people[nom], r, nom));
     });
     finalise(global);
     Object.values(people).forEach(finalise);
@@ -225,7 +231,7 @@
     const dejaCloses = new Set(Object.keys(st).filter(k => st[k].close));
     const relances = all.filter(r => {
       const f = r.fields;
-      const rel = (f[F.resClosing] === "À relancer" || f[F.resPres] === "À relancer" ||
+      const rel = ((estVente(r) && resVente(f) === "À relancer") ||
                    (f[F.resSetting] === SET_NONABOUTI && f[F.cause] === "À rappeler"));
       return rel && f[F.relance] && String(f[F.relance]).slice(0, 10) <= today;
     }).filter(r => { const k = keyOf(r); return !(k && dejaCloses.has(k)); })
@@ -240,7 +246,7 @@
     // RDV à venir : settings calés + parts en prez/closing à date future (aujourd'hui inclus)
     const rdvAVenir = all.filter(r => {
       const res = r.fields[F.resSetting];
-      return isType(r, "Setting") && (res === SET_CALE || res === SET_PREZ || res === SET_CLOSING) && rdvDayLocal(r) >= today;
+      return isType(r, "Setting") && (res === SET_CALE || res === SET_PREZ || res === SET_CLOSING || res === SET_VENTE) && rdvDayLocal(r) >= today;
     }).sort((a, c) => (a.fields[F.rdvLe] || "").localeCompare(c.fields[F.rdvLe] || ""))
       .map(r => ({
         jour: rdvDayLocal(r),
@@ -254,13 +260,12 @@
       }));
     const rdvJour = rdvAVenir.filter(r => r.jour === today);
 
-    const pi = { contacte: 0, cale: 0, vu: 0, enPrez: 0, enClosing: 0, aRelancer: 0, close: 0, perdu: 0, total: 0, closeEur: 0, aRelancerEur: 0 };
+    const pi = { contacte: 0, cale: 0, vu: 0, enVente: 0, aRelancer: 0, close: 0, perdu: 0, total: 0, closeEur: 0, aRelancerEur: 0 };
     prospects.forEach(s => {
       pi.total++;
       if (s.etat === "Closé") { pi.close++; pi.closeEur += s.vendu; }
       else if (s.etat === "À relancer") { pi.aRelancer++; pi.aRelancerEur += s.relanceEur; }
-      else if (s.etat === "En closing") pi.enClosing++;
-      else if (s.etat === "En prez") pi.enPrez++;
+      else if (s.etat === "RDV de vente") pi.enVente++;
       else if (s.etat === "Perdu") pi.perdu++;
       else if (s.etat === "Vu en setting") pi.vu++;
       else if (s.etat === "Setting calé") pi.cale++;
@@ -271,7 +276,7 @@
     let encaisse30 = 0;
     all.forEach(r => {
       if (!inPeriod(r, b30)) return;
-      if (isType(r, "Prez") || isType(r, "Closing") || isType(r, "Paiement")) encaisse30 += num(r.fields[F.encaisse]);
+      if (estVente(r) || isType(r, "Paiement")) encaisse30 += num(r.fields[F.encaisse]);
     });
 
     return {
