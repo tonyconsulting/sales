@@ -56,6 +56,15 @@ const msgRelance = r => (MSG_SRV[r.categorie] || MSG_RELANCE[r.categorie] || MSG
 
 const CATS_MSG = ["No-show", "Pas intéressé", "Pas le budget", "Réfléchit", "À rappeler", "À relancer", "defaut"];
 const CAT_LABEL = { defaut: "Autres cas (Non qualifié, Autre...)" };
+// Catalogue des notifications d'événements (textes modifiables dans Réglages)
+const NOTIFS_CATALOGUE = [
+  { cle: "vente_propose", label: "RDV proposé au closer de référence", balises: "{prospect} {quand} {setter}", defaut: ["RDV de vente à prendre", "{prospect}, {quand} (setter : {setter}). Ouvre le planning pour accepter."] },
+  { cle: "vente_ouverte", label: "RDV ouvert à toute l'équipe", balises: "{prospect} {quand} {setter}", defaut: ["RDV de vente ouvert à l'équipe", "{prospect}, {quand} (setter : {setter}). Premier qui accepte le prend."] },
+  { cle: "rdv_pris", label: "RDV pris (envoyée au setter)", balises: "{qui} {prospect} {quand}", defaut: ["RDV pris", "{qui} a pris {prospect}, {quand}."] },
+  { cle: "proposition", label: "Proposition d'horaire (au setter)", balises: "{qui} {nouveau} {prospect} {quand}", defaut: ["Proposition d'horaire à valider", "{qui} propose {nouveau} pour {prospect} (au lieu de {quand})."] },
+  { cle: "horaire_confirme", label: "Horaire confirmé (à celui qui a proposé)", balises: "{prospect} {quand}", defaut: ["Horaire confirmé", "{prospect} est confirmé {quand}."] },
+  { cle: "vente_closee", label: "Vente closée (à toi)", balises: "{montant}", defaut: ["Order !", "{montant}, 1 vente by K.NE"] }
+];
 
 // Options des menus « Résultat… » rapides (prospects + retards)
 const RES_Q_SETTING = ["No-show", "Non abouti", "RDV de vente calé"];
@@ -799,7 +808,21 @@ async function chargeRappels() {
   try {
     const d = await call("rappels_list");
     const rows = d.rappels || [];
-    z.innerHTML = `<div class="sinfo" style="margin-bottom:14px;color:var(--muted)">Notifications envoyées automatiquement avant chaque RDV (vérification toutes les 5 minutes, délai minimum 5). Balises utilisables dans le message : {prospect} {heure} {type} {insta}</div>` +
+    const nt = d.notifs || {};
+    z.innerHTML = `<h2 style="margin-top:4px">Espace 1 — Notifications de l'équipe</h2>
+      <div class="sinfo" style="margin-bottom:14px;color:var(--muted)">Les textes des alertes envoyées à l'équipe. Les balises se remplissent toutes seules.</div>` +
+      NOTIFS_CATALOGUE.map(n => {
+        const cur = nt[n.cle] || { titre: n.defaut[0], corps: n.defaut[1] };
+        return `
+      <div class="slot" data-ncle="${n.cle}">
+        <div class="stitre">${n.label}</div>
+        <div class="field"><label>Titre</label><input class="nt-titre" maxlength="80" value="${esc(cur.titre)}"></div>
+        <div class="field"><label>Message (balises : ${esc(n.balises)})</label><textarea class="nt-corps" maxlength="300">${esc(cur.corps)}</textarea></div>
+        <div class="abtns"><button class="abtn oui nt-save">Enregistrer</button></div>
+      </div>`;
+      }).join("") +
+      `<h2 style="margin-top:34px">Rappels automatiques avant les RDV</h2>
+      <div class="sinfo" style="margin-bottom:14px;color:var(--muted)">Notifications envoyées automatiquement avant chaque RDV (vérification toutes les 5 minutes, délai minimum 5). Balises utilisables dans le message : {prospect} {heure} {type} {insta}</div>` +
       rows.map(g => `
       <div class="slot" data-rid="${g.id}">
         <div class="row2">
@@ -823,7 +846,7 @@ async function chargeRappels() {
         <div class="abtns"><button class="abtn oui rg-save">Enregistrer</button><button class="abtn non rg-del">Supprimer</button></div>
       </div>`).join("") +
       `<div class="abtns" style="margin-top:6px"><button class="abtn" id="rgAjout">Ajouter un rappel</button></div>` +
-      `<h2 style="margin-top:34px">Messages de relance (bouton « Copier le message »)</h2>
+      `<h2 style="margin-top:34px">Espace 2 — Messages aux prospects (bouton « Copier le message »)</h2>
       <div class="sinfo" style="margin-bottom:14px;color:var(--muted)">Un texte par catégorie, copié tel quel par l'équipe. Balises : {prenom} = prénom du prospect, {date} = date du dernier échange.</div>` +
       CATS_MSG.map(cat => `
       <div class="slot" data-cat="${esc(cat)}">
@@ -858,6 +881,20 @@ async function chargeRappels() {
       if (!confirm("Supprimer ce rappel ? Plus aucune notification de ce type ne partira.")) return;
       try { await call("rappels_delete", { id: b.closest(".slot").dataset.rid }); chargeRappels(); }
       catch (e) { alert(e.message); }
+    }));
+    z.querySelectorAll(".nt-save").forEach(b => b.addEventListener("click", async () => {
+      if (b.disabled) return;
+      const sl = b.closest(".slot");
+      const titre = sl.querySelector(".nt-titre").value.trim().slice(0, 80);
+      const corps = sl.querySelector(".nt-corps").value.trim().slice(0, 300);
+      if (!titre || !corps) return alert("Titre et message obligatoires.");
+      b.disabled = true;
+      b.textContent = "Enregistrement…";
+      try {
+        await call("notifs_save", { cle: sl.dataset.ncle, titre, corps });
+        b.textContent = "Enregistré";
+        setTimeout(() => { b.textContent = "Enregistrer"; b.disabled = false; }, 1500);
+      } catch (e) { alert(e.message); b.textContent = "Enregistrer"; b.disabled = false; }
     }));
     z.querySelectorAll(".msg-save").forEach(b => b.addEventListener("click", async () => {
       if (b.disabled) return;
