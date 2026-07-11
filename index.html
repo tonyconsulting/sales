@@ -513,13 +513,21 @@
     <section class="page" id="page-planning">
       <div id="notifZone"></div>
       <div id="offZone"></div>
+      <div style="display:flex;gap:8px;margin:0 0 16px;flex-wrap:wrap">
+        <div class="fsel"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h18l-7 8v6l-4 2v-8L3 4Z"/></svg><select id="planType">
+          <option value="tous">Tous les RDV</option>
+          <option value="Setting">Settings</option>
+          <option value="Vente">Ventes (closing)</option>
+          <option value="R2">R2 encaissement</option>
+        </select></div>
+        <div class="fsel"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c0-3.5 3-5.5 7-5.5s7 2 7 5.5"/></svg><select id="planQui">
+          <option value="tous">Toute l'équipe</option>
+          <option value="moi">Les miens</option>
+        </select></div>
+      </div>
       <div id="aprendre"></div>
       <div id="propositions"></div>
       <h2>Emploi du temps <span style="color:var(--muted);font-weight:400">(grisé = en attente, plein = confirmé)</span></h2>
-      <div class="controls" style="margin-bottom:12px">
-        <button id="planMoi">Moi</button>
-        <button id="planTous" class="active">Toute l'équipe</button>
-      </div>
       <div id="planning"></div>
     </section>
     <section class="page" id="page-appels">
@@ -551,7 +559,7 @@
   </main>
 </div>
 
-<script src="stats.js?v=22"></script>
-<script src="app.js?v=22"></script>
+<script src="stats.js?v=23"></script>
+<script src="app.js?v=23"></script>
 </body>
 </html>
