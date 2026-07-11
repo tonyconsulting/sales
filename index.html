@@ -301,7 +301,32 @@
             <div class="field"><label>Cause *</label>
               <select id="inCause"><option value=""></option><option>Pas intéressé</option><option>Pas le budget</option><option>Non qualifié</option><option>À rappeler</option><option>Autre</option></select>
             </div>
-            <div class="field" id="rappelBlock" style="display:none"><label>À rappeler le *</label><input type="date" id="inDateRappel"></div>
+            <div class="row2">
+              <div class="field"><label>Relance</label>
+                <select id="inRelSet">
+                  <option value="">Pas de relance</option>
+                  <option value="3">Dans 3 jours</option>
+                  <option value="7">Dans 1 semaine</option>
+                  <option value="14">Dans 2 semaines</option>
+                  <option value="30">Dans 1 mois</option>
+                  <option value="date">Je choisis la date</option>
+                </select></div>
+              <div class="field" id="fRelSetDate" style="display:none"><label>Le *</label><input type="date" id="inRelSetDate"></div>
+            </div>
+          </div>
+          <div id="noshowBlock" style="display:none">
+            <div class="row2">
+              <div class="field"><label>Relance</label>
+                <select id="inRelNs">
+                  <option value="">Pas de relance</option>
+                  <option value="3">Dans 3 jours</option>
+                  <option value="7">Dans 1 semaine</option>
+                  <option value="14">Dans 2 semaines</option>
+                  <option value="30">Dans 1 mois</option>
+                  <option value="date">Je choisis la date</option>
+                </select></div>
+              <div class="field" id="fRelNsDate" style="display:none"><label>Le *</label><input type="date" id="inRelNsDate"></div>
+            </div>
           </div>
           <div id="suiteBlock" style="display:none">
             <div class="field"><label>Quand ?</label><input type="datetime-local" id="inSuiteLe"></div>
@@ -326,8 +351,36 @@
               <div class="field"><label>Montant de la vente (€) *</label><input type="number" id="inMontantV" min="0" step="1"></div>
             </div>
           </div>
-          <div class="field" id="causeVBlock" style="display:none"><label>Cause *</label>
-            <select id="inCauseV"><option value=""></option><option>Pas intéressé</option><option>Pas le budget</option><option>Réfléchit</option><option>Autre</option></select>
+          <div id="causeVBlock" style="display:none">
+            <div class="field"><label>Cause *</label>
+              <select id="inCauseV"><option value=""></option><option>Pas intéressé</option><option>Pas le budget</option><option>Réfléchit</option><option>Autre</option></select>
+            </div>
+            <div class="row2">
+              <div class="field"><label>Relance</label>
+                <select id="inRelPc">
+                  <option value="">Pas de relance</option>
+                  <option value="3">Dans 3 jours</option>
+                  <option value="7">Dans 1 semaine</option>
+                  <option value="14">Dans 2 semaines</option>
+                  <option value="30">Dans 1 mois</option>
+                  <option value="date">Je choisis la date</option>
+                </select></div>
+              <div class="field" id="fRelPcDate" style="display:none"><label>Le *</label><input type="date" id="inRelPcDate"></div>
+            </div>
+          </div>
+          <div id="noshowVBlock" style="display:none">
+            <div class="row2">
+              <div class="field"><label>Relance</label>
+                <select id="inRelNsV">
+                  <option value="">Pas de relance</option>
+                  <option value="3">Dans 3 jours</option>
+                  <option value="7">Dans 1 semaine</option>
+                  <option value="14">Dans 2 semaines</option>
+                  <option value="30">Dans 1 mois</option>
+                  <option value="date">Je choisis la date</option>
+                </select></div>
+              <div class="field" id="fRelNsVDate" style="display:none"><label>Le *</label><input type="date" id="inRelNsVDate"></div>
+            </div>
           </div>
           <div id="relanceVBlock" style="display:none"><div class="row2">
             <div class="field"><label>À relancer le *</label><input type="date" id="inDateRelanceV"></div>
