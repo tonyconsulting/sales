@@ -113,6 +113,13 @@ function adapt(row) {
   return { fields: f, createdTime: row.created_at, id: row.id, equipe: row.equipe, rdvId: row.rdv_id || null, debrief: row.debrief || null, debriefPar: row.debrief_par || null, debriefLe: row.debrief_le || null };
 }
 
+// Déjà un RDV confirmé à ±45 min ? (le serveur refuse l'acceptation de toute façon)
+function monConflit(r) {
+  if (!MOI) return false;
+  const t = new Date(r.quand).getTime();
+  return RDVS.some(x => x.id !== r.id && x.assigne_a === MOI.nom && x.statut === "confirme" &&
+    Math.abs(new Date(x.quand).getTime() - t) <= 45 * 60000);
+}
 function roleMatchFront(type, roleVente) {
   const r = String(roleVente || "");
   if (type === "Prez" || type === "Vente") return r.includes("presentateur") || r.includes("présentateur") || r.includes("closer");
@@ -157,35 +164,35 @@ function majOffZone(today) {
   const z = el("offZone");
   if (!z || !MOI || MOI.role === "observateur") { if (z) z.innerHTML = ""; return; }
   const off = MOI.off_jusqu_au && MOI.off_jusqu_au >= today;
+  // Discret, en haut à droite : une simple pilule d'état
   z.innerHTML = `
-    <div class="slot" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap${off ? ";border-color:#7f1d1d" : ""}">
-      <div class="stitre" style="margin:0">${off
-        ? "Tu es off jusqu'au " + jolieDate(MOI.off_jusqu_au, today) + " inclus — le dispatch et les offres t'oublient"
-        : "Dispo pour les RDV de vente"}</div>
-      ${off
-        ? `<button class="abtn oui" id="offRetour">Je suis de retour</button>`
-        : pilule(IC_REG.etat, `<select id="offSelect">
-            <option value="">Me mettre off…</option>
-            <option value="1">Aujourd'hui seulement</option>
-            <option value="3">3 jours</option>
-            <option value="7">1 semaine</option>
-            <option value="14">2 semaines</option>
-          </select>`)}
+    <div style="display:flex;justify-content:flex-end;margin:-4px 0 10px">
+      ${pilule(IC_REG.etat, `<select id="offSelect" ${off ? 'style="color:#f87171"' : ""}>
+        ${off
+          ? `<option value="">Off jusqu'au ${jolieDate(MOI.off_jusqu_au, today)}</option><option value="retour">Je suis de retour</option>`
+          : `<option value="">Dispo</option>
+             <option value="1">Off aujourd'hui</option>
+             <option value="3">Off 3 jours</option>
+             <option value="7">Off 1 semaine</option>
+             <option value="14">Off 2 semaines</option>`}
+      </select>`)}
     </div>`;
-  const sel = el("offSelect");
-  if (sel) sel.addEventListener("change", async () => {
-    const n = Number(sel.value);
-    if (!n) return;
-    const d = new Date(today + "T12:00:00");
-    d.setDate(d.getDate() + n - 1);
-    const jusqu = SalesStats.ymdLocal(d);
-    try { await call("membre_off", { jusqu_au: jusqu }); MOI.off_jusqu_au = jusqu; render(); }
-    catch (e) { alert(e.message); }
-  });
-  const ret = el("offRetour");
-  if (ret) ret.addEventListener("click", async () => {
-    try { await call("membre_off", { jusqu_au: null }); MOI.off_jusqu_au = null; render(); }
-    catch (e) { alert(e.message); }
+  el("offSelect").addEventListener("change", async () => {
+    const v = el("offSelect").value;
+    if (!v) return;
+    try {
+      if (v === "retour") {
+        await call("membre_off", { jusqu_au: null });
+        MOI.off_jusqu_au = null;
+      } else {
+        const d = new Date(today + "T12:00:00");
+        d.setDate(d.getDate() + Number(v) - 1);
+        const jusqu = SalesStats.ymdLocal(d);
+        await call("membre_off", { jusqu_au: jusqu });
+        MOI.off_jusqu_au = jusqu;
+      }
+      render();
+    } catch (e) { alert(e.message); el("offSelect").value = ""; }
   });
 }
 function renderPlanning(today) {
@@ -199,9 +206,9 @@ function renderPlanning(today) {
   const actifs = rdvsVisibles().filter(r => r.statut !== "annule" && r.statut !== "fait");
   const nonConfirmes = actifs.filter(r => r.statut !== "confirme");
 
-  const pourMoi = nonConfirmes.filter(r =>
-    (r.statut === "propose" && r.assigne_a === moi) ||
-    (r.statut === "ouvert" && roleMatchFront(r.type, MOI.role_vente) && !(r.refusee_par || []).includes(moi) && r.setter !== moi));
+  const pourMoi = nonConfirmes.filter(r => !monConflit(r) &&
+    ((r.statut === "propose" && r.assigne_a === moi) ||
+     (r.statut === "ouvert" && roleMatchFront(r.type, MOI.role_vente) && !(r.refusee_par || []).includes(moi) && r.setter !== moi)));
   const propositions = actifs.filter(r => r.statut === "decale" && (admin || r.setter === moi));
   const enAttente = nonConfirmes.filter(r => !pourMoi.includes(r) && !propositions.includes(r));
 
@@ -997,6 +1004,24 @@ function dateRelanceDepuis(pfx) {
   d.setDate(d.getDate() + Number(v));
   return SalesStats.ymdLocal(d);
 }
+// Le setter voit le planning des closers au moment où il cale
+function majJourHint(inputId, hintId) {
+  const inp = el(inputId), hint = el(hintId);
+  if (!inp || !hint) return;
+  const v = inp.value;
+  if (!v) { hint.style.display = "none"; return; }
+  const jourChoisi = v.slice(0, 10);
+  const tChoisi = new Date(v).getTime();
+  const jour = rdvsVisibles()
+    .filter(r => !["annule", "fait"].includes(r.statut) && String(r.quand).length && jourLocal(r.quand) === jourChoisi)
+    .sort((p, q) => p.quand.localeCompare(q.quand));
+  if (!jour.length) { hint.style.display = ""; hint.innerHTML = `Ce jour-là : personne n'a encore de RDV.`; return; }
+  hint.style.display = "";
+  hint.innerHTML = `Déjà au planning ce jour-là :<br>` + jour.map(r => {
+    const proche = Math.abs(new Date(r.quand).getTime() - tChoisi) <= 45 * 60000;
+    return `<span ${proche ? 'class="late"' : ""}>${heureLocale(r.quand)} · ${esc(r.type)} · ${r.assigne_a ? esc(r.assigne_a) : "à prendre"}${proche ? " — ça se chevauche" : ""}</span>`;
+  }).join("<br>");
+}
 function resetForm() {
   PENDING_RDV = null;
   PENDING_PROSPECT = "";
@@ -1135,7 +1160,7 @@ function offrePourMoi() {
   if (!MOI || MOI.role === "observateur") return null;
   const moi = MOI.nom;
   return rdvsVisibles().find(r =>
-    !OFFRES_VUES.has(r.id + "|" + r.offre_depuis) && r.offre_depuis &&
+    !OFFRES_VUES.has(r.id + "|" + r.offre_depuis) && r.offre_depuis && !monConflit(r) &&
     ((r.statut === "propose" && r.assigne_a === moi) ||
      (r.statut === "ouvert" && roleMatchFront(r.type, MOI.role_vente) && !(r.refusee_par || []).includes(moi) && r.setter !== moi)));
 }
@@ -1885,6 +1910,8 @@ async function init() {
     chercheT = setTimeout(() => { PROSPECT_FILTRE = el("prospectCherche").value; render(); }, 200);
   });
   el("inEncaisseSel").addEventListener("change", majConditionnels);
+  el("inCaleLe").addEventListener("change", () => majJourHint("inCaleLe", "jourHintCale"));
+  el("inSuiteLe").addEventListener("change", () => majJourHint("inSuiteLe", "jourHintSuite"));
   el("planMoi").addEventListener("click", () => { PLANFILTRE = "moi"; el("planMoi").classList.add("active"); el("planTous").classList.remove("active"); render(); });
   el("planTous").addEventListener("click", () => { PLANFILTRE = "tous"; el("planTous").classList.add("active"); el("planMoi").classList.remove("active"); render(); });
   el("refresh").addEventListener("click", loadData);
