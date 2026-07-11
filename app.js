@@ -10,7 +10,7 @@ try {
 // Clé PUBLIQUE de signature des notifications (la privée est côté serveur)
 const VAPID_PUB = "BBefpGJrlJu2jhuahy0XnidzpnE5nfZ84kRh3YueXISXD036WLlbQu50vebuJcKKiF05xz5Cj_C__Qa8wc_YWNQ";
 
-let MOI = null, EQUIPE = [], RECORDS = [], RDVS = [], SERVER_OFFSET = 0, OFFRES_VUES = new Set(), FILE_RELANCES = [], FILE_IDX = 0, PERIOD = "1j", TYPE = "Setting", PLANFILTRE = "tous", VUEQUIPE = "toutes", VUEMOI = "equipe", PENDING_RDV = null, PENDING_PROSPECT = "", PENDING_TYPE = "", PENDING_TEL = "", PENDING_TEL_PROSPECT = "";
+let MOI = null, EQUIPE = [], RECORDS = [], RDVS = [], CORBEILLE = [], PROSPECT_FILTRE = "", FICHES = {}, SERVER_OFFSET = 0, OFFRES_VUES = new Set(), FILE_RELANCES = [], FILE_IDX = 0, PERIOD = "1j", TYPE = "Setting", PLANFILTRE = "tous", VUEQUIPE = "toutes", VUEMOI = "equipe", PENDING_RDV = null, PENDING_PROSPECT = "", PENDING_TYPE = "", PENDING_TEL = "", PENDING_TEL_PROSPECT = "";
 const NOM_EQUIPE = { kelian: "Team Kélian", mila: "Team Mila" };
 const voitTout = () => MOI && (MOI.role === "admin" || MOI.role === "observateur");
 const chipEquipe = e => (voitTout() && e) ? `<span class="pill ${e === "mila" ? "teamM" : "teamK"}" title="${NOM_EQUIPE[e] || e}">${e === "mila" ? "M" : "K"}</span> ` : "";
@@ -84,13 +84,17 @@ const NOTIFS_CATALOGUE = [
   { cle: "rdv_pris", label: "RDV pris (envoyée au setter)", balises: "{qui} {prospect} {quand} {delai}", defaut: ["RDV pris", "{qui} a pris {prospect}, {quand} {delai}."] },
   { cle: "proposition", label: "Proposition d'horaire (au setter)", balises: "{qui} {nouveau} {prospect} {quand}", defaut: ["Proposition d'horaire à valider", "{qui} propose {nouveau} pour {prospect} (au lieu de {quand})."] },
   { cle: "horaire_confirme", label: "Horaire confirmé (à celui qui a proposé)", balises: "{prospect} {quand}", defaut: ["Horaire confirmé", "{prospect} est confirmé {quand}."] },
-  { cle: "vente_closee", label: "Vente closée (à toi)", balises: "{montant}", defaut: ["Order !", "{montant}, 1 vente by K.NE"] }
+  { cle: "vente_closee", label: "Vente closée (à toi)", balises: "{montant}", defaut: ["Order !", "{montant}, 1 vente by K.NE"] },
+  { cle: "debrief", label: "Débrief coaching (au vendeur du call)", balises: "{qui} {prospect}", defaut: ["Débrief de {qui}", "Sur ton call avec {prospect}. Ouvre la page Appels pour le lire."] },
+  { cle: "encaissement", label: "Argent du R2 reçu (à toi)", balises: "{montant} {prospect}", defaut: ["Argent reçu", "{montant} encaissé pour {prospect}."] }
 ];
 
 // Options des menus « Résultat… » rapides (prospects + retards)
 const RES_Q_SETTING = ["No-show", "Non abouti", "RDV de vente calé"];
 const RES_Q_VENTE = ["Closé", "Pas closé", "No-show", "À relancer"];
-const quickresHTML = r => `<select class="quickres" data-rdv="${r.id}"><option value="">${r.type === "Setting" ? "Résultat du setting…" : "Résultat de la vente…"}</option>` +
+const quickresHTML = r => r.type === "R2"
+  ? `<button class="abtn oui" data-act="r2-encaisse" data-id="${r.id}">Argent reçu</button>`
+  : `<select class="quickres" data-rdv="${r.id}"><option value="">${r.type === "Setting" ? "Résultat du setting…" : "Résultat de la vente…"}</option>` +
   (r.type === "Setting" ? RES_Q_SETTING : RES_Q_VENTE).map(o => `<option>${o}</option>`).join("") + `</select>`;
 
 const MAP = {
@@ -106,7 +110,7 @@ const MAP = {
 function adapt(row) {
   const f = {};
   for (const k in MAP) if (row[k] !== null && row[k] !== undefined && row[k] !== "") f[MAP[k]] = row[k];
-  return { fields: f, createdTime: row.created_at, id: row.id, equipe: row.equipe, rdvId: row.rdv_id || null };
+  return { fields: f, createdTime: row.created_at, id: row.id, equipe: row.equipe, rdvId: row.rdv_id || null, debrief: row.debrief || null, debriefPar: row.debrief_par || null, debriefLe: row.debrief_le || null };
 }
 
 function roleMatchFront(type, roleVente) {
@@ -149,7 +153,43 @@ function etatTexte(r) {
   return "";
 }
 
+function majOffZone(today) {
+  const z = el("offZone");
+  if (!z || !MOI || MOI.role === "observateur") { if (z) z.innerHTML = ""; return; }
+  const off = MOI.off_jusqu_au && MOI.off_jusqu_au >= today;
+  z.innerHTML = `
+    <div class="slot" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap${off ? ";border-color:#7f1d1d" : ""}">
+      <div class="stitre" style="margin:0">${off
+        ? "Tu es off jusqu'au " + jolieDate(MOI.off_jusqu_au, today) + " inclus — le dispatch et les offres t'oublient"
+        : "Dispo pour les RDV de vente"}</div>
+      ${off
+        ? `<button class="abtn oui" id="offRetour">Je suis de retour</button>`
+        : pilule(IC_REG.etat, `<select id="offSelect">
+            <option value="">Me mettre off…</option>
+            <option value="1">Aujourd'hui seulement</option>
+            <option value="3">3 jours</option>
+            <option value="7">1 semaine</option>
+            <option value="14">2 semaines</option>
+          </select>`)}
+    </div>`;
+  const sel = el("offSelect");
+  if (sel) sel.addEventListener("change", async () => {
+    const n = Number(sel.value);
+    if (!n) return;
+    const d = new Date(today + "T12:00:00");
+    d.setDate(d.getDate() + n - 1);
+    const jusqu = SalesStats.ymdLocal(d);
+    try { await call("membre_off", { jusqu_au: jusqu }); MOI.off_jusqu_au = jusqu; render(); }
+    catch (e) { alert(e.message); }
+  });
+  const ret = el("offRetour");
+  if (ret) ret.addEventListener("click", async () => {
+    try { await call("membre_off", { jusqu_au: null }); MOI.off_jusqu_au = null; render(); }
+    catch (e) { alert(e.message); }
+  });
+}
 function renderPlanning(today) {
+  majOffZone(today);
   const moi = MOI.nom, admin = MOI.role === "admin";
   // Préserver une saisie d'horaire en cours (le re-render toutes les 10 min l'effacerait)
   const inlinesOuverts = [...document.querySelectorAll(".decale-inline")].filter(x => x.style.display === "flex").map(x => x.id);
@@ -228,18 +268,22 @@ function renderPlanning(today) {
         <button class="abtn oui" data-act="conf-prospect" data-id="${r.id}">Le prospect a confirmé</button>
       </div>`);
   const prisHTML = r => r.pris_en_s ? `<div class="sinfo" style="font-size:12px">${formatDelaiPrise(r.pris_en_s)}</div>` : "";
+  const r2HTML = r => r.type !== "R2" ? "" :
+    `<div class="sinfo" style="color:var(--accent)">À encaisser : ${eur(r.montant_attendu || 0)}${r.note_r2 ? " · " + esc(r.note_r2) : ""}</div>`;
   const enRetard = mesConfirmes.filter(r => r.quand < seuilRetard);
   if (aLogger.length) {
     html += `<h2>À logger — l'appel est passé (ou c'est aujourd'hui)</h2>` + aLogger.map(r => `
       <div class="slot">
         <div class="stitre">${chipEquipe(r.equipe)}${esc(r.type)} · ${quandJoli(r.quand, today)} · ${esc(r.prospect)}</div>
         <div class="sinfo">${slotInfo(r)} · pris par ${esc(r.assigne_a)}</div>
-        ${prisHTML(r)}
+        ${prisHTML(r)}${r2HTML(r)}
         ${r.qualif ? `<div class="sinfo">${esc(r.qualif)}</div>` : ""}
         ${r.quand > new Date().toISOString() ? confHTML(r) : ""}
         ${ficheHTML(r)}
         <div class="abtns">
-          <button class="abtn oui" data-act="log-resultat" data-id="${r.id}">Log le résultat (pré-rempli)</button>
+          ${r.type === "R2"
+            ? `<button class="abtn oui" data-act="r2-encaisse" data-id="${r.id}">Argent reçu</button>`
+            : `<button class="abtn oui" data-act="log-resultat" data-id="${r.id}">Log le résultat (pré-rempli)</button>`}
           <button class="abtn" data-act="toggle-deplace" data-id="${r.id}">Décaler</button>
           ${outilsSetter(r)}
         </div>
@@ -251,7 +295,7 @@ function renderPlanning(today) {
       <div class="slot">
         <div class="stitre">${chipEquipe(r.equipe)}${esc(r.type)} · ${quandJoli(r.quand, today)} · ${esc(r.prospect)}</div>
         <div class="sinfo">${slotInfo(r)} · pris par ${esc(r.assigne_a)}</div>
-        ${prisHTML(r)}
+        ${prisHTML(r)}${r2HTML(r)}
         ${r.qualif ? `<div class="sinfo">${esc(r.qualif)}</div>` : ""}
         ${confHTML(r)}
         ${ficheHTML(r)}
@@ -323,6 +367,11 @@ function renderPlanning(today) {
         await loadData();
         return;
       }
+      if (act === "r2-encaisse") {
+        try { await call("r2_encaisse", { id }); } catch (e) { alert(e.message); }
+        await loadData();
+        return;
+      }
       if (act === "copie-conf") {
         const msg = (MSG_SRV.confirmation || MSG_RELANCE.confirmation)
           .replace("{prenom}", (b.dataset.nom || "").trim().split(/\s+/)[0] || "")
@@ -385,6 +434,16 @@ function cartesBonus(s) {
   if (cOui || cNon) {
     cartes.push(["Show vente (confirmés)", cOui ? Math.round(cOuiShow / cOui * 100) + " %" : "–"]);
     cartes.push(["Show vente (non confirmés)", cNon ? Math.round(cNonShow / cNon * 100) + " %" : "–"]);
+  }
+  {
+    let attente = 0;
+    rdvsVisibles().forEach(r => {
+      if (r.type !== "R2" || !["confirme", "decale"].includes(r.statut)) return;
+      if (VUEMOI === "moi" && r.assigne_a !== MOI.nom) return;
+      if (MOI.role !== "admin" && VUEMOI !== "moi" && r.assigne_a !== MOI.nom) return;
+      attente += Number(r.montant_attendu) || 0;
+    });
+    if (attente) cartes.push(["En attente d'encaissement", eur(attente)]);
   }
   if (VUEMOI === "moi" && MOI && MOI.taux_commission) {
     const debutMois = s.today.slice(0, 8) + "01";
@@ -498,13 +557,14 @@ function render() {
     ? ORDRE.map(etat => {
         const list = prospectsPipe.filter(x => x.etat === etat);
         const cards = list.slice(0, 20).map(x =>
-          `<div class="kcard" ${x.sommeil ? 'style="border-left:3px solid var(--bad)"' : ""}><div class="kn">${esc(x.nom || x.contact || "?")}</div><div class="kc">${esc(x.contact)}</div>` +
+          `<div class="kcard fiche-tap" data-cle="${esc(x.cle || "")}" ${x.sommeil ? 'style="border-left:3px solid var(--bad);cursor:pointer"' : 'style="cursor:pointer"'}><div class="kn">${esc(x.nom || x.contact || "?")}</div><div class="kc">${esc(x.contact)}</div>` +
           (x.sommeil ? `<div class="rot">${x.joursSans} j sans contact</div>` : "") +
           (etat === "Closé" && x.vendu ? `<div class="ke">${eur(x.vendu)}${x.vendu > x.encaisse ? " (reste " + eur(x.vendu - x.encaisse) + ")" : ""}</div>` : "") +
           (etat === "À relancer" && x.relanceEur ? `<div class="ke">${eur(x.relanceEur)}</div>` : "") + `</div>`).join("");
         return `<div class="kol"><h3>${etat} <span>${list.length}</span></h3>${cards}${list.length > 20 ? `<div class="kmore">+ ${list.length - 20} autres</div>` : ""}</div>`;
       }).join("")
     : `<div class="empty">${filtrePipe === "tous" ? "Aucun prospect identifié." : "Rien dans ce filtre. Bon signe."}</div>`;
+  document.querySelectorAll(".fiche-tap").forEach(k => k.addEventListener("click", () => montreFiche(k.dataset.cle)));
 
   // Menu « Résultat… » sur les lignes dont le RDV est passé (visible
   // seulement pour celui qui a calé / pris le RDV, et l'admin)
@@ -524,47 +584,83 @@ function render() {
       .sort((a, c) => a.quand.localeCompare(c.quand))[0];
   };
 
-  el("prospectsT").innerHTML = s.prospects.length
+  FICHES = {};
+  s.prospects.forEach(x => { if (x.cle) FICHES[x.cle] = x; });
+  const filtreP = PROSPECT_FILTRE.trim().toLowerCase();
+  const prospectsMontres = !filtreP ? s.prospects
+    : s.prospects.filter(x => (x.nom || "").toLowerCase().includes(filtreP) || (x.contact || "").toLowerCase().includes(filtreP));
+  el("prospectsT").innerHTML = prospectsMontres.length
     ? tableHTML(
         [{ t: "Prospect" }, { t: "Contact" }, { t: "Source" }, { t: "État" }, { t: "" }, { t: "Dernier contact" }, { t: "Vendu", n: 1 }, { t: "Encaissé", n: 1 }],
-        s.prospects.map(x => {
+        prospectsMontres.map(x => {
           const rp = rdvEchuDe(x);
           const quick = rp ? quickresHTML(rp) : "";
           return [
-            { t: esc(x.nom || "?") }, { t: esc(x.contact) }, { t: esc(x.source || "–") },
+            { t: `<a href="#" class="fiche-lien" data-cle="${esc(x.cle || "")}" style="color:var(--fg);text-decoration:underline dotted var(--muted)">${esc(x.nom || "?")}</a>` }, { t: esc(x.contact) }, { t: esc(x.source || "–") },
             { t: `<span class="pill ${ETAT_PILL[x.etat] || ""}">${esc(x.etat)}</span>` },
             { t: quick },
             { t: esc(x.dernier) + (x.sommeil ? ` <span class="rot">(${x.joursSans} j)</span>` : "") }, { t: eur(x.vendu), n: 1 }, { t: eur(x.encaisse), n: 1 }
           ];
         }))
-    : `<div class="empty">Aucun prospect identifié.</div>`;
+    : `<div class="empty">${filtreP ? "Aucun prospect ne correspond à la recherche." : "Aucun prospect identifié."}</div>`;
+  document.querySelectorAll(".fiche-lien").forEach(l2 => l2.addEventListener("click", e2 => { e2.preventDefault(); montreFiche(l2.dataset.cle); }));
 
   const calls = recsVisibles().slice()
     .sort((a, c) => (SalesStats.dateOf(c) + (c.createdTime || "")).localeCompare(SalesStats.dateOf(a) + (a.createdTime || "")))
     .slice(0, 100);
-  const headA = [{ t: "Date" }, { t: "Type" }, { t: "Qui" }, { t: "Prospect" }, { t: "Résultat" }, { t: "Montant", n: 1 }, { t: "Encaissé", n: 1 }];
-  if (MOI.role === "admin") headA.push({ t: "" });
+  const admin2 = MOI.role === "admin";
+  const peutCorriger = r => {
+    if (admin2) return true;
+    if (MOI.role === "observateur") return false;
+    const f = r.fields || {};
+    const mien = f[F.qui] === MOI.nom || f[F.quiPres] === MOI.nom;
+    return mien && r.createdTime && (Date.now() - new Date(r.createdTime).getTime()) < 24 * 3600 * 1000;
+  };
+  const headA = [{ t: "Date" }, { t: "Type" }, { t: "Qui" }, { t: "Prospect" }, { t: "Résultat" }, { t: "Montant", n: 1 }, { t: "Encaissé", n: 1 }, { t: "" }];
   el("appels").innerHTML = calls.length
     ? tableHTML(headA,
         calls.map(r => {
           const f = r.fields || {};
           let res = f[F.resSetting] || f[F.resPres] || f[F.resClosing] || (f[F.type] === "Paiement" ? "Encaissement" : "–");
           if (f[F.cause]) res += " (" + f[F.cause] + ")";
+          const boutons = [];
+          if (peutCorriger(r)) boutons.push(`<button class="del" data-corrige="${r.id}">corriger</button>`);
+          if (admin2) boutons.push(`<button class="del" data-debrief="${r.id}">${r.debrief ? "débrief ✓" : "débrief"}</button>`);
+          else if (r.debrief) boutons.push(`<button class="del" data-debrief="${r.id}">débrief</button>`);
+          if (admin2) boutons.push(`<button class="del" data-id="${r.id}" title="Mettre à la corbeille">suppr.</button>`);
           const row = [
             { t: esc(SalesStats.dateOf(r)) },
             { t: chipEquipe(r.equipe) + `<span class="pill grey">${esc(f[F.type] || "?")}</span>` },
             { t: esc(f[F.qui] || "?") }, { t: esc(f[F.prospect] || "?") }, { t: esc(res) },
             { t: f[F.montant] ? eur(f[F.montant]) : "", n: 1 },
-            { t: f[F.encaisse] ? eur(f[F.encaisse]) : "", n: 1 }
+            { t: f[F.encaisse] ? eur(f[F.encaisse]) : "", n: 1 },
+            { t: boutons.join(" "), n: 1 }
           ];
-          if (MOI.role === "admin") row.push({ t: `<button class="del" data-id="${r.id}" title="Supprimer (erreur de saisie)">suppr.</button>`, n: 1 });
           return row;
         }))
     : `<div class="empty">Aucun call loggé pour l'instant.</div>`;
-  document.querySelectorAll(".del").forEach(b => b.addEventListener("click", async () => {
-    if (!confirm("Supprimer ce call ? S'il avait créé un RDV au planning, le RDV sera annulé aussi.")) return;
+  document.querySelectorAll("[data-corrige]").forEach(b => b.addEventListener("click", () => montreCorrige(b.dataset.corrige)));
+  document.querySelectorAll("[data-debrief]").forEach(b => b.addEventListener("click", () => montreDebrief(b.dataset.debrief)));
+  document.querySelectorAll(".del[data-id]").forEach(b => b.addEventListener("click", async () => {
+    if (!confirm("Mettre ce call à la corbeille ? S'il avait créé un RDV au planning, le RDV sera annulé. Restaurable pendant 30 jours en bas de cette page.")) return;
     try { await call("delete", { id: b.dataset.id }); await loadData(); } catch (e) { alert(e.message); }
   }));
+
+  // Corbeille (admin) : restaurable 30 jours
+  if (el("corbeilleZone")) {
+    el("corbeilleZone").innerHTML = (admin2 && CORBEILLE.length) ? `
+      <details class="slot regl" style="margin-top:14px">
+        <summary>Corbeille (${CORBEILLE.length}) — vidée automatiquement après 30 jours</summary>
+        ${CORBEILLE.map(c => `
+          <div class="sinfo" style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--line)">
+            <span>${esc(c.date || "")} · ${esc(c.type || "?")} · ${esc(c.prospect || "?")} (${esc(c.qui || "?")})</span>
+            <button class="abtn" data-restaure="${c.id}">Restaurer</button>
+          </div>`).join("")}
+      </details>` : "";
+    document.querySelectorAll("[data-restaure]").forEach(b => b.addEventListener("click", async () => {
+      try { await call("call_restore", { id: b.dataset.restaure }); await loadData(); } catch (e) { alert(e.message); }
+    }));
+  }
 
   el("relances").innerHTML = s.relances.length
     ? tableHTML(
@@ -638,6 +734,36 @@ function render() {
         dispArr.map(([nom2, arr]) => [{ t: esc(nom2) }, { t: arr.length, n: 1 }, { t: formatDelaiPrise(medi(arr)).replace("pris ", ""), n: 1 }]))
     : `<div class="empty">Aucun RDV dispatché pris sur la période.</div>`;
 
+  if (el("bilanZone")) {
+    if (MOI.role === "admin") {
+      el("bilanZone").innerHTML = `<div class="abtns" style="margin-bottom:6px">
+        <button class="abtn" data-bilan="kelian">Copier le bilan de la semaine — Team Kélian</button>
+        <button class="abtn" data-bilan="mila">Copier le bilan — Team Mila</button>
+      </div>`;
+      el("bilanZone").querySelectorAll("[data-bilan]").forEach(b => b.addEventListener("click", async () => {
+        const eq = b.dataset.bilan;
+        const txt = bilanSemaine(eq, eq === "kelian" ? "Team Kélian" : "Team Mila");
+        try { await navigator.clipboard.writeText(txt); const t0 = b.textContent; b.textContent = "Copié, colle-le en DM"; setTimeout(() => { b.textContent = t0; }, 2500); }
+        catch (_) { prompt("Copie le bilan :", txt); }
+      }));
+    } else el("bilanZone").innerHTML = "";
+  }
+  if (el("comparatifZone")) {
+    if (MOI.role === "admin" && VUEQUIPE === "toutes") {
+      const gK = SalesStats.compute(RECORDS.filter(r => r.equipe === "kelian"), PERIOD, new Date()).global;
+      const gM = SalesStats.compute(RECORDS.filter(r => r.equipe === "mila"), PERIOD, new Date()).global;
+      const lignes = [
+        ["Settings calés", x => x.cales || 0], ["Settings effectués", x => x.effectues || 0],
+        ["Show", x => fmtPct(x.txShow)], ["RDV de vente calés", x => x.versVente || 0],
+        ["Ventes closées", x => x.closes || 0], ["Taux de closing", x => fmtPct(x.txClose)],
+        ["Vendu", x => eur(x.vendu || 0)], ["Encaissé", x => eur(x.encaisse || 0)],
+      ];
+      el("comparatifZone").innerHTML = `<h2>Kélian vs Mila (période sélectionnée)</h2><div class="tscroll">` +
+        tableHTML([{ t: "" }, { t: "Team Kélian", n: 1 }, { t: "Team Mila", n: 1 }],
+          lignes.map(([lbl, fn]) => [{ t: lbl }, { t: fn(gK), n: 1 }, { t: fn(gM), n: 1 }])) + `</div>`;
+    } else el("comparatifZone").innerHTML = "";
+  }
+
   const names = Object.keys(s.people).sort();
   el("people").innerHTML = names.length
     ? tableHTML(
@@ -672,10 +798,13 @@ function render() {
     r.quand < new Date(Date.now() - 48 * 3600 * 1000).toISOString() &&
     (MOI.role === "admin" || r.assigne_a === MOI.nom || r.setter === MOI.nom)).length;
   const nbSansPreneur = MOI.role === "admin" ? rdvsVisibles().filter(r => r.statut === "ouvert" && r.offre_niveau >= 3).length : 0;
+  const nbR2 = rdvsVisibles().filter(r => r.type === "R2" && r.statut === "confirme" &&
+    r.quand < new Date().toISOString() && (MOI.role === "admin" || r.assigne_a === MOI.nom)).length;
   const segs = [];
   if (relRetard) segs.push(`<span data-va="relances">${relRetard} relance${relRetard > 1 ? "s" : ""} en retard</span>`);
   if (nbRegulariser) segs.push(`<span data-va="planning">${nbRegulariser} résultat${nbRegulariser > 1 ? "s" : ""} à saisir</span>`);
   if (nbSansPreneur) segs.push(`<span data-va="planning">${nbSansPreneur} RDV sans preneur</span>`);
+  if (nbR2) segs.push(`<span data-va="planning">${nbR2} encaissement${nbR2 > 1 ? "s" : ""} à confirmer</span>`);
   el("bandeauRetard").style.display = segs.length ? "" : "none";
   el("bandeauRetard").className = "bandeau-retard";
   el("bandeauRetard").innerHTML = segs.join(" · ");
@@ -848,6 +977,9 @@ function majConditionnels() {
   el("suiteBlock").style.display = rs === "RDV de vente calé" ? "" : "none";
   const rv = el("inResVente").value;
   el("closeVBlock").style.display = rv === "Closé" ? "" : "none";
+  const r2 = rv === "Closé" && el("inEncaisseSel").value === "r2";
+  el("fR2Quand").style.display = r2 ? "" : "none";
+  el("fR2Note").style.display = r2 ? "" : "none";
   el("fObjection").style.display = (rv === "Closé" || rv === "Pas closé" || rv === "À relancer") ? "" : "none";
   el("causeVBlock").style.display = rv === "Pas closé" ? "" : "none";
   el("noshowVBlock").style.display = rv === "No-show" ? "" : "none";
@@ -879,6 +1011,7 @@ function resetForm() {
   el("inQualifUrgence").value = "Non demandé";
   el("inQualifObjection").value = "Aucune";
   el("inObjection").value = "Aucune";
+  el("inEncaisseSel").value = "oui";
   majChips();
   majConditionnels();
 }
@@ -946,6 +1079,12 @@ async function submitForm(e) {
       // Plus d'acomptes (10/07) : tout est comptant, l'encaissé = le montant
       c.paiement = "Comptant";
       c.encaisse = c.montant;
+      // Argent pas encore arrivé (plafond bloqué...) : R2 d'encaissement au planning
+      if (el("inEncaisseSel").value === "r2") {
+        if (!el("inR2Quand").value) return alert("Indique la date du R2 d'encaissement.");
+        c.r2_quand = new Date(el("inR2Quand").value).toISOString();
+        c.r2_note = el("inR2Note").value.trim();
+      }
     }
     if (c.res_closing === "Pas closé") {
       c.cause = el("inCauseV").value;
@@ -978,6 +1117,7 @@ async function submitForm(e) {
       : c.res_setting === "Calé (à venir)" ? "Call enregistré. Le setting est au planning."
       : r.rdv_statut === "confirme" ? "Call enregistré. L'appel de vente est au planning de " + (r.rdv_assigne || "?") + "."
       : "Call enregistré. Le RDV est parti au dispatch (onglet Planning).";
+    if (r.rdv_conflit) el("toast").textContent += " ATTENTION : il y a déjà un RDV " + r.rdv_conflit + " chez la même personne.";
     el("toast").style.display = "block";
     setTimeout(() => { el("toast").style.display = "none"; }, 4000);
     loadData();
@@ -1108,6 +1248,169 @@ function montreFile() {
   el("fileQuitter").addEventListener("click", () => { ov.style.display = "none"; });
 }
 
+// ----- Fiche prospect : tout l'historique avant de rappeler -----
+function montreFiche(cle) {
+  const x = FICHES[cle];
+  if (!x) return;
+  const ov = el("ficheOverlay");
+  const today = SalesStats.ymdLocal(new Date());
+  const nI = v => String(v || "").trim().toLowerCase().replace(/^@/, "").replace(/\s+/g, "");
+  const nT = v => String(v || "").replace(/\D/g, "").slice(-9);
+  const recsEq = (!voitTout() || VUEQUIPE === "toutes") ? RECORDS : RECORDS.filter(r => r.equipe === VUEQUIPE);
+  const miens = recsEq.filter(r => SalesStats.keyOf(r) === cle)
+    .sort((p, q) => (SalesStats.dateOf(q) + (q.createdTime || "")).localeCompare(SalesStats.dateOf(p) + (p.createdTime || "")));
+  const rdvsMiens = rdvsVisibles().filter(r =>
+    (r.instagram && "ig:" + nI(r.instagram) === cle) || (r.telephone && "tel:" + nT(r.telephone) === cle))
+    .sort((p, q) => q.quand.localeCompare(p.quand));
+  const F2 = SalesStats.F;
+  const ETAT_RDV = { propose: "en attente du closer", ouvert: "à l'équipe", decale: "horaire en discussion", confirme: "confirmé", fait: "fait", annule: "annulé" };
+  const ligneCall = r => {
+    const f = r.fields || {};
+    const res = f[F2.resSetting] || f[F2.resPres] || f[F2.resClosing] || (f[F2.type] === "Paiement" ? "Encaissement" : "");
+    const extras = [];
+    if (f[F2.montant]) extras.push(eur(f[F2.montant]) + (Number(f[F2.encaisse]) ? " encaissé" : " (pas encore encaissé)"));
+    else if (f[F2.encaisse]) extras.push(eur(f[F2.encaisse]) + " encaissé");
+    if (f[F2.cause]) extras.push("cause : " + f[F2.cause]);
+    if (f["Objection"] && f["Objection"] !== "Aucune") extras.push("objection : " + f["Objection"]);
+    if (f[F2.relance]) extras.push("relance le " + String(f[F2.relance]).slice(0, 10));
+    return `<div style="padding:9px 0;border-bottom:1px solid var(--line)">
+      <div class="stitre" style="margin:0;font-size:13.5px">${esc(jolieDate(SalesStats.dateOf(r), today))} · ${esc(f[F2.type] || "?")}${res ? " — " + esc(res) : ""} <span style="color:var(--muted);font-weight:400">(${esc(f[F2.qui] || "?")})</span></div>
+      ${extras.length ? `<div class="sinfo" style="margin:3px 0 0">${esc(extras.join(" · "))}</div>` : ""}
+      ${f[F2.notes] ? `<div class="sinfo" style="margin:3px 0 0;white-space:pre-wrap">${esc(f[F2.notes])}</div>` : ""}
+      ${f[F2.fiche] ? `<div class="sinfo" style="margin:3px 0 0;white-space:pre-wrap">${esc(f[F2.fiche])}</div>` : ""}
+      ${r.debrief ? `<div class="sinfo" style="margin:5px 0 0;padding:7px 9px;border:1px solid var(--line);border-radius:8px;color:var(--accent)">Débrief de ${esc(r.debriefPar || "?")} : <span style="color:var(--fg);white-space:pre-wrap">${esc(r.debrief)}</span></div>` : ""}
+    </div>`;
+  };
+  const admin2 = MOI.role === "admin";
+  const autres = Object.values(FICHES).filter(y => y.cle !== cle);
+  ov.innerHTML = `<div class="offre-carte" style="max-height:86vh;overflow-y:auto;text-align:left">
+    <div class="offre-titre" style="font-size:19px">${esc(x.nom || x.contact || "?")}</div>
+    <div class="sinfo" style="margin:4px 0 2px">${esc(x.contact || "")}${x.source ? " · " + esc(x.source) : ""}</div>
+    <div style="margin:8px 0 4px"><span class="pill ${ETAT_PILL[x.etat] || ""}">${esc(x.etat)}</span>
+      ${x.sommeil ? `<span class="rot" style="margin-left:8px">${x.joursSans} j sans contact</span>` : ""}
+      ${x.vendu ? `<span class="sinfo" style="margin-left:8px">${eur(x.vendu)} vendu · ${eur(x.encaisse)} encaissé</span>` : ""}</div>
+    ${rdvsMiens.length ? `<div class="stitre" style="margin:12px 0 2px;font-size:13px;color:var(--muted)">RENDEZ-VOUS</div>` +
+      rdvsMiens.map(r => `<div class="sinfo" style="padding:3px 0">${esc(r.type)} · ${quandJoli(r.quand, today)} · ${esc(ETAT_RDV[r.statut] || r.statut)}${r.assigne_a ? " (" + esc(r.assigne_a) + ")" : ""}${r.type === "R2" && r.statut !== "fait" ? ` — à encaisser ${eur(r.montant_attendu || 0)}` : ""}</div>`).join("") : ""}
+    <div class="stitre" style="margin:12px 0 2px;font-size:13px;color:var(--muted)">HISTORIQUE (${miens.length} call${miens.length > 1 ? "s" : ""})</div>
+    ${miens.map(ligneCall).join("") || `<div class="sinfo">Aucun call.</div>`}
+    ${admin2 && autres.length ? `
+      <div class="field" style="margin-top:14px"><label>Fusionner cette fiche avec... (si le pseudo a été mal écrit)</label>
+        <select id="ficheFusion"><option value="">Choisir la bonne fiche…</option>
+          ${autres.slice(0, 200).map(y => `<option value="${esc(y.cle)}">${esc(y.nom || "?")} — ${esc(y.contact || "?")}</option>`).join("")}
+        </select></div>` : ""}
+    <div class="offre-actions" style="margin-top:14px"><button class="abtn" id="ficheFermer">Fermer</button></div>
+  </div>`;
+  ov.style.display = "";
+  el("ficheFermer").addEventListener("click", () => { ov.style.display = "none"; });
+  const fu = el("ficheFusion");
+  if (fu) fu.addEventListener("change", async () => {
+    const cible = FICHES[fu.value];
+    if (!cible) return;
+    if (!confirm(`Fusionner « ${x.nom || x.contact} » dans « ${cible.nom || cible.contact} » ? Les ${miens.length} calls et ${rdvsMiens.length} RDV passeront sur le contact ${cible.contact}.`)) { fu.value = ""; return; }
+    const cibleTel = cible.contact && !String(cible.contact).trim().startsWith("@");
+    try {
+      await call("fusion_prospect", {
+        call_ids: miens.map(r => r.id),
+        rdv_ids: rdvsMiens.map(r => r.id),
+        instagram: cibleTel ? "" : cible.contact,
+        telephone: cibleTel ? cible.contact : "",
+      });
+      ov.style.display = "none";
+      await loadData();
+    } catch (e) { alert(e.message); fu.value = ""; }
+  });
+}
+
+// ----- Corriger un call (l'auteur 24 h, l'admin toujours) -----
+function montreCorrige(id) {
+  const r = RECORDS.find(x => x.id === id);
+  if (!r) return;
+  const f = r.fields || {}, F2 = SalesStats.F;
+  const ov = el("callOverlay");
+  const vente = f[F2.type] === "Vente";
+  const sources = [...document.querySelectorAll("#inSource option")].map(o => o.value);
+  ov.innerHTML = `<div class="offre-carte" style="text-align:left">
+    <div class="offre-titre" style="font-size:19px">Corriger le call</div>
+    <div class="sinfo" style="margin:4px 0 12px">${esc(f[F2.type] || "?")} · ${esc(SalesStats.dateOf(r))} · ${esc(f[F2.qui] || "?")} — le type et le résultat ne se corrigent pas (supprime et re-saisis si besoin)</div>
+    <div class="row2">
+      <div class="field"><label>Prospect</label><input id="corProspect" value="${esc(f[F2.prospect] || "")}"></div>
+      <div class="field"><label>Instagram</label><input id="corInsta" value="${esc(f[F2.insta] || "")}"></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>Source</label><select id="corSource">${sources.map(s2 => `<option value="${esc(s2)}"${(f[F2.source] || "") === s2 ? " selected" : ""}>${esc(s2 || "—")}</option>`).join("")}</select></div>
+      ${vente ? `<div class="field"><label>Montant (€)</label><input type="number" id="corMontant" min="0" step="1" value="${esc(f[F2.montant] || "")}"></div>` : ""}
+    </div>
+    <div class="field"><label>Notes</label><textarea id="corNotes" maxlength="1000">${esc(f[F2.notes] || "")}</textarea></div>
+    <div class="offre-actions">
+      <button class="abtn oui" id="corSave">Enregistrer la correction</button>
+      <button class="abtn" id="corFermer">Annuler</button>
+    </div>
+  </div>`;
+  ov.style.display = "";
+  el("corFermer").addEventListener("click", () => { ov.style.display = "none"; });
+  el("corSave").addEventListener("click", async () => {
+    const prospect = el("corProspect").value.trim();
+    if (!prospect) return alert("Le prospect est obligatoire.");
+    const corr = { prospect, instagram: el("corInsta").value.trim(), source: el("corSource").value, notes: el("corNotes").value.trim() };
+    if (vente && el("corMontant")) corr.montant = Number(el("corMontant").value) || 0;
+    try { await call("call_update", { id, call: corr }); ov.style.display = "none"; await loadData(); }
+    catch (e) { alert(e.message); }
+  });
+}
+
+// ----- Débrief coaching accroché au call -----
+function montreDebrief(id) {
+  const r = RECORDS.find(x => x.id === id);
+  if (!r) return;
+  const f = r.fields || {}, F2 = SalesStats.F;
+  const ov = el("callOverlay");
+  const admin2 = MOI.role === "admin";
+  const today = SalesStats.ymdLocal(new Date());
+  ov.innerHTML = `<div class="offre-carte" style="text-align:left">
+    <div class="offre-titre" style="font-size:19px">Débrief — ${esc(f[F2.prospect] || "?")}</div>
+    <div class="sinfo" style="margin:4px 0 12px">${esc(f[F2.type] || "?")} · ${esc(SalesStats.dateOf(r))} · par ${esc(f[F2.qui] || "?")}${r.debriefLe ? " — débriefé le " + esc(jolieDate(String(r.debriefLe).slice(0, 10), today)) : ""}</div>
+    ${admin2
+      ? `<div class="field"><label>Ton retour au vendeur (il reçoit une notif)</label><textarea id="dbTexte" maxlength="2000" style="min-height:130px">${esc(r.debrief || "")}</textarea></div>
+         <div class="offre-actions"><button class="abtn oui" id="dbSave">Envoyer le débrief</button><button class="abtn" id="dbFermer">Fermer</button></div>`
+      : `<div class="sinfo" style="white-space:pre-wrap;padding:10px;border:1px solid var(--line);border-radius:10px">${esc(r.debrief || "")}</div>
+         <div class="offre-actions" style="margin-top:12px"><button class="abtn" id="dbFermer">Fermer</button></div>`}
+  </div>`;
+  ov.style.display = "";
+  el("dbFermer").addEventListener("click", () => { ov.style.display = "none"; });
+  const sv = el("dbSave");
+  if (sv) sv.addEventListener("click", async () => {
+    try { await call("call_debrief", { id, texte: el("dbTexte").value }); ov.style.display = "none"; await loadData(); }
+    catch (e) { alert(e.message); }
+  });
+}
+
+// ----- Bilan hebdo copiable (le rendu de comptes du dimanche) -----
+function bilanSemaine(equipe, nomEquipe) {
+  const now = new Date();
+  const lundi = new Date(now); lundi.setDate(lundi.getDate() - ((lundi.getDay() + 6) % 7)); lundi.setHours(12, 0, 0, 0);
+  const ymd = d => SalesStats.ymdLocal(d);
+  const plus = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+  const [de, a2, deP, aP] = [ymd(lundi), ymd(plus(lundi, 6)), ymd(plus(lundi, -7)), ymd(plus(lundi, -1))];
+  const recs = RECORDS.filter(r => r.equipe === equipe);
+  const dans = (from, to) => recs.filter(r => { const d = SalesStats.dateOf(r); return d >= from && d <= to; });
+  const cur = SalesStats.compute(dans(de, a2), "tout", now).global;
+  const prev = SalesStats.compute(dans(deP, aP), "tout", now).global;
+  const dN = (x, y) => { const v = (x || 0) - (y || 0); return v > 0 ? ` (+${v})` : v < 0 ? ` (${v})` : " (=)"; };
+  const dE = (x, y) => { const v = (x || 0) - (y || 0); return v > 0 ? ` (+${eur(v)})` : v < 0 ? ` (-${eur(-v)})` : " (=)"; };
+  const jj = s2 => s2.slice(8, 10) + "/" + s2.slice(5, 7);
+  return `${nomEquipe} — semaine du ${jj(de)} au ${jj(a2)}
+
+Settings calés : ${cur.cales || 0}${dN(cur.cales, prev.cales)}
+Settings effectués : ${cur.effectues || 0}${dN(cur.effectues, prev.effectues)} · Show ${fmtPct(cur.txShow)}
+RDV de vente calés : ${cur.versVente || 0}${dN(cur.versVente, prev.versVente)}
+Appels de vente faits : ${cur.ventesEff || 0}${dN(cur.ventesEff, prev.ventesEff)}
+Ventes closées : ${cur.closes || 0}${dN(cur.closes, prev.closes)} · Taux de closing ${fmtPct(cur.txClose)}
+Vendu : ${eur(cur.vendu || 0)}${dE(cur.vendu, prev.vendu)}
+Encaissé : ${eur(cur.encaisse || 0)}${dE(cur.encaisse, prev.encaisse)}
+
+(entre parenthèses : l'évolution vs la semaine du ${jj(deP)})`;
+}
+
 // ----- Script en contexte -----
 function montreScript() {
   const p = PARAMS || {};
@@ -1140,11 +1443,17 @@ async function chargeRappels() {
     const d = await call("rappels_list");
     const rows = d.rappels || [];
     const nt = d.notifs || {};
+    let MEMBRES = [];
+    try { MEMBRES = (await call("membres_list")).membres || []; } catch (_) { /* pas admin */ }
+    const lienDe = code => location.origin + location.pathname.replace(/index\.html$/, "") + "?c=" + code;
+    const ROLES_VENTE = [["", "aucun (setting seulement)"], ["setter", "setter"], ["closer", "closer"], ["setter,closer", "setter + closer"], ["presentateur", "présentateur"], ["presentateur,closer", "présentateur + closer"]];
+    const aujourdHui = SalesStats.ymdLocal(new Date());
     z.innerHTML = `<div class="controls" style="margin:2px 0 18px">
         <button class="rg-tab" data-tab="alertes">Alertes équipe</button>
         <button class="rg-tab" data-tab="rappels">Rappels avant RDV</button>
         <button class="rg-tab" data-tab="messages">Messages prospects</button>
         <button class="rg-tab" data-tab="scripts">Scripts</button>
+        ${MEMBRES.length ? `<button class="rg-tab" data-tab="equipe">Équipe</button>` : ""}
       </div>
       <div class="rg-pan" id="pan-alertes">
       <div class="sinfo" style="margin-bottom:14px;color:var(--muted)">Les textes des alertes envoyées à l'équipe. Touche une ligne pour la modifier, les balises se remplissent toutes seules.</div>` +
@@ -1203,7 +1512,95 @@ async function chargeRappels() {
         <summary>${lbl}${(PARAMS[cle] || "").trim() ? "" : " · vide"}</summary>
         <div class="field"><textarea class="prm-txt" maxlength="4000" style="min-height:120px">${esc(PARAMS[cle] || "")}</textarea></div>
         <div class="abtns"><button class="abtn oui prm-save">Enregistrer</button></div>
-      </details>`).join("") + `</div>`;
+      </details>`).join("") + `</div>` +
+      (!MEMBRES.length ? "" : `
+      <div class="rg-pan" id="pan-equipe" style="display:none">
+      <div class="sinfo" style="margin-bottom:14px;color:var(--muted)">Les accès de l'équipe : rôles, référents, commissions, liens. Désactiver quelqu'un coupe son lien immédiatement.</div>` +
+      MEMBRES.map(m => {
+        const estAdmin = m.role === "admin";
+        const estObs = m.role === "observateur";
+        const off = m.off_jusqu_au && m.off_jusqu_au >= aujourdHui;
+        const resume = [m.nom,
+          m.equipe === "kelian" ? "Team Kélian" : m.equipe === "mila" ? "Team Mila" : "les deux",
+          estAdmin ? "admin" : estObs ? "observateur" : (m.role_vente || "setting seulement")]
+          .concat(m.referent ? ["référent"] : []).concat(off ? ["OFF"] : []).concat(m.actif ? [] : ["DÉSACTIVÉ"]).join(" · ");
+        return `
+      <details class="slot regl" data-mnom="${esc(m.nom)}" ${m.actif ? "" : 'style="opacity:.55"'}>
+        <summary>${esc(resume)}</summary>
+        ${estAdmin || estObs ? "" : `
+        <div class="row2">
+          <div class="field"><label>Rôle de vente</label>${pilule(IC_REG.qui, `<select class="mq-rolev">${ROLES_VENTE.map(([v, l2]) => `<option value="${v}"${(m.role_vente || "") === v ? " selected" : ""}>${l2}</option>`).join("")}</select>`)}</div>
+          <div class="field"><label>Closer de référence (reçoit les offres en premier)</label>${pilule(IC_REG.etat, `<select class="mq-ref"><option value="non"${m.referent ? "" : " selected"}>Non</option><option value="oui"${m.referent ? " selected" : ""}>Oui</option></select>`)}</div>
+        </div>
+        <div class="row2">
+          <div class="field"><label>Équipe</label>${pilule(IC_REG.qui, `<select class="mq-eq"><option value="kelian"${m.equipe === "kelian" ? " selected" : ""}>Team Kélian</option><option value="mila"${m.equipe === "mila" ? " selected" : ""}>Team Mila</option></select>`)}</div>
+          <div class="field"><label>Commission (% de l'encaissé, vide = pas affichée)</label>${pilule(IC_REG.temps, `<input type="number" class="mq-taux" min="0" max="99" step="1" value="${m.taux_commission ? Math.round(m.taux_commission * 100) : ""}">`)}</div>
+        </div>`}
+        <div class="field"><label>Off jusqu'au (inclus, vide = dispo)</label>${pilule(IC_REG.temps, `<input type="date" class="mq-off" value="${esc(m.off_jusqu_au || "")}">`)}</div>
+        <div class="abtns">
+          <button class="abtn oui mq-save">Enregistrer</button>
+          <button class="abtn mq-lien" data-code="${esc(m.code)}">Copier son lien</button>
+          ${estAdmin ? "" : `<button class="abtn mq-regen">Nouveau code</button>
+          <button class="abtn non mq-actif" data-actif="${m.actif ? "0" : "1"}">${m.actif ? "Désactiver" : "Réactiver"}</button>`}
+        </div>
+      </details>`;
+      }).join("") + `
+      <details class="slot regl" id="nmBloc">
+        <summary>Ajouter quelqu'un</summary>
+        <div class="row2">
+          <div class="field"><label>Prénom</label><input id="nmNom" maxlength="40"></div>
+          <div class="field"><label>Équipe</label>${pilule(IC_REG.qui, `<select id="nmEq"><option value="kelian">Team Kélian</option><option value="mila">Team Mila</option></select>`)}</div>
+        </div>
+        <div class="row2">
+          <div class="field"><label>Rôle de vente</label>${pilule(IC_REG.qui, `<select id="nmRolev">${ROLES_VENTE.map(([v, l2]) => `<option value="${v}">${l2}</option>`).join("")}</select>`)}</div>
+          <div class="field"><label>Type d'accès</label>${pilule(IC_REG.etat, `<select id="nmRole"><option value="membre">Membre (logge et voit son équipe)</option><option value="observateur">Observateur (voit tout, ne touche à rien)</option></select>`)}</div>
+        </div>
+        <div class="abtns"><button class="abtn oui" id="nmCreer">Créer et copier son lien</button></div>
+        <div class="sinfo" id="nmOut" style="margin-top:8px"></div>
+      </details>
+      </div>`);
+    z.querySelectorAll(".mq-save").forEach(b => b.addEventListener("click", async () => {
+      const sl = b.closest(".slot");
+      const corps = { nom: sl.dataset.mnom };
+      const rv = sl.querySelector(".mq-rolev"); if (rv) corps.role_vente = rv.value;
+      const rf = sl.querySelector(".mq-ref"); if (rf) corps.referent = rf.value === "oui";
+      const eq = sl.querySelector(".mq-eq"); if (eq) corps.equipe = eq.value;
+      const tx = sl.querySelector(".mq-taux"); if (tx) corps.taux_commission = tx.value ? Number(tx.value) / 100 : 0;
+      const of2 = sl.querySelector(".mq-off"); if (of2) corps.off_jusqu_au = of2.value || null;
+      try { await call("membre_maj", corps); b.textContent = "Enregistré"; setTimeout(() => chargeRappels(), 700); }
+      catch (e) { alert(e.message); }
+    }));
+    z.querySelectorAll(".mq-lien").forEach(b => b.addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(lienDe(b.dataset.code)); b.textContent = "Lien copié"; setTimeout(() => { b.textContent = "Copier son lien"; }, 2000); }
+      catch (_) { prompt("Copie le lien :", lienDe(b.dataset.code)); }
+    }));
+    z.querySelectorAll(".mq-regen").forEach(b => b.addEventListener("click", async () => {
+      const nom = b.closest(".slot").dataset.mnom;
+      if (!confirm("Nouveau code pour " + nom + " ? Son ancien lien meurt tout de suite, il faudra lui envoyer le nouveau (et il devra réactiver ses notifs).")) return;
+      try {
+        const r = await call("membre_code_regen", { nom });
+        try { await navigator.clipboard.writeText(lienDe(r.code)); alert("Nouveau lien copié, envoie-le à " + nom + " en privé."); }
+        catch (_) { prompt("Nouveau lien de " + nom + " :", lienDe(r.code)); }
+        chargeRappels();
+      } catch (e) { alert(e.message); }
+    }));
+    z.querySelectorAll(".mq-actif").forEach(b => b.addEventListener("click", async () => {
+      const nom = b.closest(".slot").dataset.mnom;
+      const versActif = b.dataset.actif === "1";
+      if (!confirm(versActif ? "Réactiver l'accès de " + nom + " ?" : "Désactiver " + nom + " ? Son lien ne marchera plus et il ne recevra plus rien.")) return;
+      try { await call("membre_maj", { nom, actif: versActif }); chargeRappels(); } catch (e) { alert(e.message); }
+    }));
+    const nmc = el("nmCreer");
+    if (nmc) nmc.addEventListener("click", async () => {
+      const nom = el("nmNom").value.trim();
+      if (!nom) return alert("Le prénom est obligatoire.");
+      try {
+        const r = await call("membre_ajoute", { nom, equipe: el("nmEq").value, role_vente: el("nmRolev").value, role: el("nmRole").value });
+        const lien = lienDe(r.code);
+        el("nmOut").innerHTML = `Créé. Son lien : <b>${esc(lien)}</b> — envoie-le en privé, un lien = une identité.`;
+        try { await navigator.clipboard.writeText(lien); } catch (_) { /* affiché au-dessus */ }
+      } catch (e) { alert(e.message); }
+    });
     z.querySelectorAll(".prm-save").forEach(b => b.addEventListener("click", async () => {
       if (b.disabled) return;
       const sl = b.closest(".slot");
@@ -1388,6 +1785,7 @@ async function loadData() {
     const d = await call("data");
     RECORDS = (d.calls || []).map(adapt);
     RDVS = d.rdvs || [];
+    CORBEILLE = d.corbeille || [];
     if (d.maintenant) SERVER_OFFSET = new Date(d.maintenant).getTime() - Date.now();
     // Nouvelle vente closée par quelqu'un d'autre depuis le dernier chargement ?
     const Fx = SalesStats.F;
@@ -1481,6 +1879,12 @@ async function init() {
   el("fileDemarrer").addEventListener("click", () => { FILE_IDX = 0; montreFile(); });
   el("btnScript").addEventListener("click", montreScript);
   el("vueMoi").addEventListener("change", () => { VUEMOI = el("vueMoi").value; render(); });
+  let chercheT = null;
+  el("prospectCherche").addEventListener("input", () => {
+    clearTimeout(chercheT);
+    chercheT = setTimeout(() => { PROSPECT_FILTRE = el("prospectCherche").value; render(); }, 200);
+  });
+  el("inEncaisseSel").addEventListener("change", majConditionnels);
   el("planMoi").addEventListener("click", () => { PLANFILTRE = "moi"; el("planMoi").classList.add("active"); el("planTous").classList.remove("active"); render(); });
   el("planTous").addEventListener("click", () => { PLANFILTRE = "tous"; el("planTous").classList.add("active"); el("planMoi").classList.remove("active"); render(); });
   el("refresh").addEventListener("click", loadData);
