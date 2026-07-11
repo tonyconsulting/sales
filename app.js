@@ -10,12 +10,14 @@ try {
 // Clé PUBLIQUE de signature des notifications (la privée est côté serveur)
 const VAPID_PUB = "BBefpGJrlJu2jhuahy0XnidzpnE5nfZ84kRh3YueXISXD036WLlbQu50vebuJcKKiF05xz5Cj_C__Qa8wc_YWNQ";
 
-let MOI = null, EQUIPE = [], RECORDS = [], RDVS = [], PERIOD = "1j", TYPE = "Setting", PLANFILTRE = "tous", VUEQUIPE = "toutes", VUEMOI = "equipe", PENDING_RDV = null, PENDING_PROSPECT = "", PENDING_TYPE = "", PENDING_TEL = "", PENDING_TEL_PROSPECT = "";
+let MOI = null, EQUIPE = [], RECORDS = [], RDVS = [], SERVER_OFFSET = 0, OFFRES_VUES = new Set(), FILE_RELANCES = [], FILE_IDX = 0, PERIOD = "1j", TYPE = "Setting", PLANFILTRE = "tous", VUEQUIPE = "toutes", VUEMOI = "equipe", PENDING_RDV = null, PENDING_PROSPECT = "", PENDING_TYPE = "", PENDING_TEL = "", PENDING_TEL_PROSPECT = "";
 const NOM_EQUIPE = { kelian: "Team Kélian", mila: "Team Mila" };
 const voitTout = () => MOI && (MOI.role === "admin" || MOI.role === "observateur");
 const chipEquipe = e => (voitTout() && e) ? `<span class="pill ${e === "mila" ? "teamM" : "teamK"}" title="${NOM_EQUIPE[e] || e}">${e === "mila" ? "M" : "K"}</span> ` : "";
 
 const el = id => document.getElementById(id);
+const maintenantServeur = () => Date.now() + SERVER_OFFSET;
+const formatDelaiPrise = s => s <= 240 ? (s < 120 ? "pris en " + s + " s" : "pris en " + Math.round(s / 60) + " min") : "pris avec " + Math.round((s - 240) / 60) + " min de retard";
 const eur = n => (Number(n) || 0).toLocaleString("fr-FR") + " €";
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const fmtPct = v => v === null || v === undefined ? "–" : v + " %";
@@ -50,6 +52,7 @@ const MSG_RELANCE = {
   defaut: "Coucou {prenom} ! Je reviens vers toi suite à notre dernier échange. Dis-moi quand tu es dispo pour qu'on s'appelle."
 };
 let MSG_SRV = {}; // textes modifiés par Tony dans Réglages (config serveur)
+let PARAMS = {};  // scripts et réponses aux objections (Réglages, onglet Scripts)
 const msgRelance = r => (MSG_SRV[r.categorie] || MSG_RELANCE[r.categorie] || MSG_SRV.defaut || MSG_RELANCE.defaut)
   .replace("{prenom}", (r.prospect || "").trim().split(/\s+/)[0] || "")
   .replace("{date}", r.echange ? jolieDate(r.echange, SalesStats.ymdLocal(new Date())) : "récemment");
@@ -89,12 +92,13 @@ const MAP = {
   res_pres: "Résultat présentation", res_closing: "Résultat closing",
   offre: "Offre vendue", montant: "Montant total", encaisse: "Encaissé aujourd'hui",
   paiement: "Type de paiement", date_relance: "Date de relance",
-  prospect: "Prospect", notes: "Notes", cause: "Cause", qui_presentation: "Présentation par"
+  prospect: "Prospect", notes: "Notes", cause: "Cause", qui_presentation: "Présentation par",
+  objection: "Objection"
 };
 function adapt(row) {
   const f = {};
   for (const k in MAP) if (row[k] !== null && row[k] !== undefined && row[k] !== "") f[MAP[k]] = row[k];
-  return { fields: f, createdTime: row.created_at, id: row.id, equipe: row.equipe };
+  return { fields: f, createdTime: row.created_at, id: row.id, equipe: row.equipe, rdvId: row.rdv_id || null };
 }
 
 function roleMatchFront(type, roleVente) {
@@ -162,17 +166,23 @@ function renderPlanning(today) {
       `<button class="abtn non" data-act="rdv_annule" data-id="${r.id}">Annuler</button>`
     : "";
 
+  const reassignHTML = r => !admin ? "" : `
+        <select class="quickres" data-reassigner="${r.id}">
+          <option value="">Réassigner à…</option>
+          ${EQUIPE.filter(m => m.equipe === r.equipe && roleMatchFront(r.type, m.role_vente)).map(m => `<option>${esc(m.nom)}</option>`).join("")}
+        </select>`;
   let html = "";
   if (pourMoi.length) {
     html += `<h2>À prendre — c'est pour toi</h2>` + pourMoi.map(r => `
-      <div class="slot">
-        <div class="stitre">${chipEquipe(r.equipe)}${esc(r.type)} · ${quandJoli(r.quand, today)}</div>
+      <div class="slot" ${r.offre_niveau >= 3 ? 'style="border-color:#7f1d1d"' : ""}>
+        <div class="stitre">${chipEquipe(r.equipe)}${esc(r.type)} · ${quandJoli(r.quand, today)}${r.offre_niveau >= 3 ? ' · <span class="late">SANS PRENEUR</span>' : ""}</div>
         <div class="sinfo">${slotInfo(r)}</div>
         ${ficheHTML(r)}
         <div class="abtns">
           <button class="abtn oui" data-act="rdv_accept" data-id="${r.id}">Je le prends</button>
           <button class="abtn non" data-act="rdv_refuse" data-id="${r.id}">Pas dispo</button>
           <button class="abtn" data-act="toggle-decale" data-id="${r.id}">Proposer un autre horaire</button>
+          ${r.offre_niveau >= 3 ? reassignHTML(r) : ""}
         </div>
         <div class="decale-inline" id="dec-${r.id}">
           <input type="datetime-local" id="dech-${r.id}">
@@ -203,12 +213,21 @@ function renderPlanning(today) {
   const seuilRetard = new Date(Date.now() - 48 * 3600 * 1000).toISOString();
   const aLogger = mesConfirmes.filter(r => jourLocal(r.quand) <= today && r.quand >= seuilRetard);
   const aVenir = mesConfirmes.filter(r => jourLocal(r.quand) > today);
+  const confHTML = r => r.type !== "Vente" ? "" : (r.confirme_prospect
+    ? `<div class="sinfo" style="color:var(--accent)">Confirmé par le prospect</div>`
+    : `<div class="abtns" style="margin-bottom:10px">
+        <button class="abtn" data-act="copie-conf" data-id="${r.id}" data-nom="${esc(r.prospect)}" data-quand="${r.quand}">Copier le message de confirmation</button>
+        <button class="abtn oui" data-act="conf-prospect" data-id="${r.id}">Le prospect a confirmé</button>
+      </div>`);
+  const prisHTML = r => r.pris_en_s ? `<div class="sinfo" style="font-size:12px">${formatDelaiPrise(r.pris_en_s)}</div>` : "";
   const enRetard = mesConfirmes.filter(r => r.quand < seuilRetard);
   if (aLogger.length) {
     html += `<h2>À logger — l'appel est passé (ou c'est aujourd'hui)</h2>` + aLogger.map(r => `
       <div class="slot">
         <div class="stitre">${chipEquipe(r.equipe)}${esc(r.type)} · ${quandJoli(r.quand, today)} · ${esc(r.prospect)}</div>
         <div class="sinfo">${slotInfo(r)} · pris par ${esc(r.assigne_a)}</div>
+        ${prisHTML(r)}
+        ${r.qualif ? `<div class="sinfo">${esc(r.qualif)}</div>` : ""}
         ${ficheHTML(r)}
         <div class="abtns">
           <button class="abtn oui" data-act="log-resultat" data-id="${r.id}">Log le résultat (pré-rempli)</button>
@@ -223,6 +242,9 @@ function renderPlanning(today) {
       <div class="slot">
         <div class="stitre">${chipEquipe(r.equipe)}${esc(r.type)} · ${quandJoli(r.quand, today)} · ${esc(r.prospect)}</div>
         <div class="sinfo">${slotInfo(r)} · pris par ${esc(r.assigne_a)}</div>
+        ${prisHTML(r)}
+        ${r.qualif ? `<div class="sinfo">${esc(r.qualif)}</div>` : ""}
+        ${confHTML(r)}
         ${ficheHTML(r)}
         <div class="abtns">
           <button class="abtn" data-act="toggle-deplace" data-id="${r.id}">Décaler</button>
@@ -233,11 +255,11 @@ function renderPlanning(today) {
   }
   if (enAttente.length) {
     html += `<h2>En cours d'attribution</h2>` + enAttente.map(r => `
-      <div class="slot grise">
-        <div class="stitre">${chipEquipe(r.equipe)}${esc(r.type)} · ${quandJoli(r.quand, today)}</div>
+      <div class="slot ${r.offre_niveau >= 3 ? "" : "grise"}" ${r.offre_niveau >= 3 ? 'style="border-color:#7f1d1d"' : ""}>
+        <div class="stitre">${chipEquipe(r.equipe)}${esc(r.type)} · ${quandJoli(r.quand, today)}${r.offre_niveau >= 3 ? ' · <span class="late">SANS PRENEUR</span>' : ""}</div>
         <div class="sinfo">${slotInfo(r)}</div>
         <div class="setat">${etatTexte(r)}</div>
-        <div class="abtns">${outilsSetter(r)}</div>
+        <div class="abtns">${reassignHTML(r)}${outilsSetter(r)}</div>
       </div>`).join("");
   }
   if (enRetard.length) {
@@ -287,6 +309,19 @@ function renderPlanning(today) {
         await loadData();
         return;
       }
+      if (act === "conf-prospect") {
+        await call("rdv_confirme_prospect", { id, ok: true });
+        await loadData();
+        return;
+      }
+      if (act === "copie-conf") {
+        const msg = (MSG_SRV.confirmation || "Coucou {prenom} ! On se retrouve {date} pour notre appel. Tu me confirmes que c'est toujours bon pour toi ?")
+          .replace("{prenom}", (b.dataset.nom || "").trim().split(/\s+/)[0] || "")
+          .replace("{date}", quandJoli(b.dataset.quand, SalesStats.ymdLocal(new Date())));
+        try { await navigator.clipboard.writeText(msg); b.textContent = "Copié, colle-le en DM"; setTimeout(() => { b.textContent = "Copier le message de confirmation"; }, 2000); }
+        catch (_) { prompt("Copie le message :", msg); }
+        return;
+      }
       if (act === "log-resultat") {
         const r = RDVS.find(x => x.id === id);
         if (r) prefillLog(r);
@@ -321,6 +356,39 @@ function renderPlanning(today) {
           { t: r.fiche ? `<details><summary>voir</summary><div>${esc(r.fiche)}</div></details>` : "" }
         ]))
     : `<div class="empty">Aucun RDV aujourd'hui.</div>`;
+}
+
+// Cartes bonus du bandeau : show selon confirmation + commissions (vue Moi)
+function cartesBonus(s) {
+  const F3 = SalesStats.F;
+  const dansPeriode = r => { const d = SalesStats.dateOf(r); return d >= s.bounds.from && d <= s.bounds.to; };
+  let cOui = 0, cOuiShow = 0, cNon = 0, cNonShow = 0;
+  recsVisibles().forEach(r => {
+    if (!r.rdvId || r.fields[F3.type] !== "Vente" || !dansPeriode(r)) return;
+    const rdv = RDVS.find(x => x.id === r.rdvId);
+    const res = r.fields[F3.resClosing] || r.fields[F3.resPres];
+    if (!rdv || !res) return;
+    const show = res !== "No-show";
+    if (rdv.confirme_prospect) { cOui++; if (show) cOuiShow++; }
+    else { cNon++; if (show) cNonShow++; }
+  });
+  const cartes = [];
+  if (cOui || cNon) {
+    cartes.push(["Show vente (confirmés)", cOui ? Math.round(cOuiShow / cOui * 100) + " %" : "–"]);
+    cartes.push(["Show vente (non confirmés)", cNon ? Math.round(cNonShow / cNon * 100) + " %" : "–"]);
+  }
+  if (VUEMOI === "moi" && MOI && MOI.taux_commission) {
+    const debutMois = s.today.slice(0, 8) + "01";
+    let cash = 0;
+    RECORDS.forEach(r => {
+      const f = r.fields;
+      if (f[F3.type] === "Vente" && (f[F3.resClosing] || f[F3.resPres]) === "Closé" && f[F3.qui] === MOI.nom && SalesStats.dateOf(r) >= debutMois) {
+        cash += Number(f[F3.encaisse]) || 0;
+      }
+    });
+    cartes.push(["Commissions du mois", eur(Math.round(cash * MOI.taux_commission))]);
+  }
+  return cartes;
 }
 
 // Filtres de vue appliqués avant tous les calculs :
@@ -363,7 +431,7 @@ function render() {
     ["Panier moyen", g.panier === null ? "–" : eur(g.panier)],
     ["Délai calé → setting", s.delais.setting.moy === null ? "–" : s.delais.setting.moy + " j"],
     ["Délai calé → vente", s.delais.vente.moy === null ? "–" : s.delais.vente.moy + " j"]
-  ].map(([l, v]) => `<div class="card"><div class="label">${l}</div><div class="value">${v}</div></div>`).join("");
+  ].concat(cartesBonus(s)).map(([l, v]) => `<div class="card"><div class="label">${l}</div><div class="value">${v}</div></div>`).join("");
 
   const causesArr = Object.entries(g.causes).sort((a, c) => c[1] - a[1]);
   el("causes").innerHTML = causesArr.length
@@ -380,16 +448,27 @@ function render() {
     : `<div class="empty">Aucun prospect identifié pour l'instant.</div>`;
 
   const ORDRE = ["Setting calé", "Vu en setting", "RDV de vente", "À relancer", "Closé", "Perdu"];
-  el("kanban").innerHTML = s.prospects.length
+  const filtrePipe = el("pipeFiltre") ? el("pipeFiltre").value : "tous";
+  const nrmI = v => String(v || "").trim().toLowerCase().replace(/^@/, "").replace(/\s+/g, "");
+  const clesRdvFutur = new Set(rdvsVisibles()
+    .filter(r => ["propose", "ouvert", "decale", "confirme"].includes(r.statut) && r.quand > new Date().toISOString() && r.instagram)
+    .map(r => nrmI(r.instagram)));
+  const estOrphelin = x => ["Setting calé", "Vu en setting", "RDV de vente", "Contacté"].includes(x.etat) &&
+    !x.relance && !clesRdvFutur.has(nrmI(x.contact));
+  let prospectsPipe = s.prospects;
+  if (filtrePipe === "orphelins") prospectsPipe = s.prospects.filter(estOrphelin);
+  if (filtrePipe === "sommeil") prospectsPipe = s.prospects.filter(x => x.sommeil);
+  el("kanban").innerHTML = prospectsPipe.length
     ? ORDRE.map(etat => {
-        const list = s.prospects.filter(x => x.etat === etat);
+        const list = prospectsPipe.filter(x => x.etat === etat);
         const cards = list.slice(0, 20).map(x =>
-          `<div class="kcard"><div class="kn">${esc(x.nom || x.contact || "?")}</div><div class="kc">${esc(x.contact)}</div>` +
+          `<div class="kcard" ${x.sommeil ? 'style="border-left:3px solid var(--bad)"' : ""}><div class="kn">${esc(x.nom || x.contact || "?")}</div><div class="kc">${esc(x.contact)}</div>` +
+          (x.sommeil ? `<div class="rot">${x.joursSans} j sans contact</div>` : "") +
           (etat === "Closé" && x.vendu ? `<div class="ke">${eur(x.vendu)}${x.vendu > x.encaisse ? " (reste " + eur(x.vendu - x.encaisse) + ")" : ""}</div>` : "") +
           (etat === "À relancer" && x.relanceEur ? `<div class="ke">${eur(x.relanceEur)}</div>` : "") + `</div>`).join("");
         return `<div class="kol"><h3>${etat} <span>${list.length}</span></h3>${cards}${list.length > 20 ? `<div class="kmore">+ ${list.length - 20} autres</div>` : ""}</div>`;
       }).join("")
-    : "";
+    : `<div class="empty">${filtrePipe === "tous" ? "Aucun prospect identifié." : "Rien dans ce filtre. Bon signe."}</div>`;
 
   // Menu « Résultat… » sur les lignes dont le RDV est passé (visible
   // seulement pour celui qui a calé / pris le RDV, et l'admin)
@@ -419,7 +498,7 @@ function render() {
             { t: esc(x.nom || "?") }, { t: esc(x.contact) }, { t: esc(x.source || "–") },
             { t: `<span class="pill ${ETAT_PILL[x.etat] || ""}">${esc(x.etat)}</span>` },
             { t: quick },
-            { t: esc(x.dernier) }, { t: eur(x.vendu), n: 1 }, { t: eur(x.encaisse), n: 1 }
+            { t: esc(x.dernier) + (x.sommeil ? ` <span class="rot">(${x.joursSans} j)</span>` : "") }, { t: eur(x.vendu), n: 1 }, { t: eur(x.encaisse), n: 1 }
           ];
         }))
     : `<div class="empty">Aucun prospect identifié.</div>`;
@@ -495,6 +574,31 @@ function render() {
     chart("Encaissé par semaine", wk.map(w => w.encaisse), v => v ? (v >= 1000 ? Math.round(v / 100) / 10 + "k" : v) : "0") +
     chart("Closés par semaine", wk.map(w => w.closes), v => v);
 
+  // Répartition des objections (période + vue courantes)
+  const dansP = r => { const d = SalesStats.dateOf(r); return d >= s.bounds.from && d <= s.bounds.to; };
+  const objs = {};
+  recsVisibles().forEach(r => {
+    const o = r.fields["Objection"];
+    if (o && o !== "Aucune" && dansP(r)) objs[o] = (objs[o] || 0) + 1;
+  });
+  const objArr = Object.entries(objs).sort((x, y) => y[1] - x[1]);
+  el("objections").innerHTML = objArr.length
+    ? tableHTML([{ t: "Objection principale" }, { t: "Appels", n: 1 }], objArr.map(([k, n2]) => [{ t: esc(k) }, { t: n2, n: 1 }]))
+    : `<div class="empty">Aucune objection saisie sur la période.</div>`;
+
+  // Dispatch : temps de prise par closer
+  const parCloser = {};
+  rdvsVisibles().forEach(r => {
+    if (!r.pris_en_s || !r.assigne_a) return;
+    (parCloser[r.assigne_a] = parCloser[r.assigne_a] || []).push(r.pris_en_s);
+  });
+  const medi = arr => { const t2 = arr.slice().sort((x, y) => x - y); return t2[Math.floor(t2.length / 2)]; };
+  const dispArr = Object.entries(parCloser).sort((x, y) => y[1].length - x[1].length);
+  el("dispatch").innerHTML = dispArr.length
+    ? tableHTML([{ t: "Closer" }, { t: "RDV pris", n: 1 }, { t: "Temps médian de prise", n: 1 }],
+        dispArr.map(([nom2, arr]) => [{ t: esc(nom2) }, { t: arr.length, n: 1 }, { t: formatDelaiPrise(medi(arr)).replace("pris ", ""), n: 1 }]))
+    : `<div class="empty">Aucun RDV dispatché pris pour l'instant.</div>`;
+
   const names = Object.keys(s.people).sort();
   el("people").innerHTML = names.length
     ? tableHTML(
@@ -512,10 +616,35 @@ function render() {
   renderPlanning(s.today);
 
   // Menus « Résultat… » rapides (table prospects + retards du planning)
-  document.querySelectorAll(".quickres").forEach(sel => sel.addEventListener("change", () => {
+  document.querySelectorAll(".quickres").forEach(sel => sel.addEventListener("change", async () => {
+    if (sel.dataset.reassigner) {
+      if (!sel.value) return;
+      try { await call("rdv_reassigner", { id: sel.dataset.reassigner, nom: sel.value }); await loadData(); }
+      catch (e) { alert(e.message); }
+      return;
+    }
     const r = RDVS.find(x => x.id === sel.dataset.rdv);
     if (r && sel.value) prefillLog(r, sel.value);
   }));
+
+  // Bandeau « En retard » du dashboard : la dette avant le neuf
+  const relRetard = s.relances.filter(r => r.date < s.today && (MOI.role === "admin" || r.qui === MOI.nom)).length;
+  const nbRegulariser = rdvsVisibles().filter(r => r.statut === "confirme" &&
+    r.quand < new Date(Date.now() - 48 * 3600 * 1000).toISOString() &&
+    (MOI.role === "admin" || r.assigne_a === MOI.nom || r.setter === MOI.nom)).length;
+  const nbSansPreneur = MOI.role === "admin" ? rdvsVisibles().filter(r => r.statut === "ouvert" && r.offre_niveau >= 3).length : 0;
+  const segs = [];
+  if (relRetard) segs.push(`<span data-va="relances">${relRetard} relance${relRetard > 1 ? "s" : ""} en retard</span>`);
+  if (nbRegulariser) segs.push(`<span data-va="planning">${nbRegulariser} résultat${nbRegulariser > 1 ? "s" : ""} à saisir</span>`);
+  if (nbSansPreneur) segs.push(`<span data-va="planning">${nbSansPreneur} RDV sans preneur</span>`);
+  el("bandeauRetard").style.display = segs.length ? "" : "none";
+  el("bandeauRetard").className = "bandeau-retard";
+  el("bandeauRetard").innerHTML = segs.join(" · ");
+  el("bandeauRetard").querySelectorAll("[data-va]").forEach(x => x.addEventListener("click", () => showPage(x.dataset.va)));
+
+  // File de relances : les dues, de la plus ancienne à la plus récente
+  FILE_RELANCES = s.relances.slice().sort((x, y) => x.date.localeCompare(y.date));
+  majBoutonFile(FILE_RELANCES.length);
 
   // Pastille de la cloche (mobile) : RDV à traiter + relances
   const nbPlan = el("bPlan").style.display === "none" ? 0 : (parseInt(el("bPlan").textContent, 10) || 0);
@@ -678,6 +807,7 @@ function majConditionnels() {
   el("suiteBlock").style.display = rs === "RDV de vente calé" ? "" : "none";
   const rv = el("inResVente").value;
   el("closeVBlock").style.display = rv === "Closé" ? "" : "none";
+  el("fObjection").style.display = (rv === "Closé" || rv === "Pas closé" || rv === "À relancer") ? "" : "none";
   el("causeVBlock").style.display = rv === "Pas closé" ? "" : "none";
   el("noshowVBlock").style.display = rv === "No-show" ? "" : "none";
   el("relanceVBlock").style.display = rv === "À relancer" ? "" : "none";
@@ -704,6 +834,10 @@ function resetForm() {
   document.querySelectorAll("#logForm select").forEach(sel => { if (sel.id !== "inQui") sel.value = ""; });
   el("inDate").value = todayLocal();
   if (MOI) { el("inQuiPres").value = MOI.nom; el("inQuiClose").value = MOI.nom; }
+  el("inQualifBudget").value = "Non demandé";
+  el("inQualifUrgence").value = "Non demandé";
+  el("inQualifObjection").value = "Aucune";
+  el("inObjection").value = "Aucune";
   majChips();
   majConditionnels();
 }
@@ -753,6 +887,9 @@ async function submitForm(e) {
       c.rdv_le = new Date(el("inSuiteLe").value).toISOString();
       c.fiche = el("inFiche").value.trim();
       if (el("inVenteMoi").value === "moi") c.vente_moi = true;
+      c.qualif_budget = el("inQualifBudget").value;
+      c.qualif_urgence = el("inQualifUrgence").value;
+      c.qualif_objection = el("inQualifObjection").value;
     }
     if (PENDING_RDV && TYPE === PENDING_TYPE && cleTxt(c.prospect) === cleTxt(PENDING_PROSPECT)) c.rdv_id = PENDING_RDV;
   }
@@ -787,6 +924,7 @@ async function submitForm(e) {
       if (el("inMontantRelV").value) c.montant = Number(el("inMontantRelV").value);
     }
     if (PENDING_RDV && TYPE === PENDING_TYPE && cleTxt(c.prospect) === cleTxt(PENDING_PROSPECT)) c.rdv_id = PENDING_RDV;
+    c.objection = el("inObjection").value;
   }
   el("submitBtn").disabled = true;
   el("submitBtn").textContent = "Enregistrement…";
@@ -810,6 +948,145 @@ async function submitForm(e) {
   }
 }
 
+// ----- Écran d'offre BeReal (dispatch avec compte à rebours) -----
+let OFFRE_TIMER = null;
+function offrePourMoi() {
+  if (!MOI || MOI.role === "observateur") return null;
+  const moi = MOI.nom;
+  return rdvsVisibles().find(r =>
+    !OFFRES_VUES.has(r.id) && r.offre_depuis &&
+    ((r.statut === "propose" && r.assigne_a === moi) ||
+     (r.statut === "ouvert" && roleMatchFront(r.type, MOI.role_vente) && !(r.refusee_par || []).includes(moi) && r.setter !== moi)));
+}
+function majOffre() {
+  const r = offrePourMoi();
+  const ov = el("offreOverlay");
+  if (!r) { ov.style.display = "none"; if (OFFRE_TIMER) { clearInterval(OFFRE_TIMER); OFFRE_TIMER = null; } return; }
+  if (ov.dataset.rid === r.id && ov.style.display !== "none") return; // déjà affichée
+  const today = SalesStats.ymdLocal(new Date());
+  ov.dataset.rid = r.id;
+  ov.innerHTML = `
+    <div class="offre-carte">
+      <div class="offre-type">${r.statut === "propose" ? "RDV pour toi — closer de référence" : "RDV ouvert — premier qui accepte"}</div>
+      <div class="offre-titre">${esc(r.prospect)}</div>
+      <div class="offre-quand">${esc(r.type)} · ${quandJoli(r.quand, today)}</div>
+      <div class="offre-infos">
+        ${r.instagram ? esc(r.instagram) + "<br>" : ""}${r.source ? esc(r.source) + "<br>" : ""}setter : ${esc(r.setter)}
+        ${r.qualif ? "<br>" + esc(r.qualif) : ""}${r.fiche ? "<br>" + esc(r.fiche) : ""}
+      </div>
+      <div class="offre-chrono" id="offreChrono"><i style="width:100%"></i></div>
+      <div class="offre-compte" id="offreCompte"></div>
+      <div class="offre-actions">
+        <button class="abtn oui" id="offrePrendre">Je le prends</button>
+        <button class="abtn non" id="offrePasser">Je passe</button>
+      </div>
+      <div class="offre-plus-tard" id="offrePlusTard">Plus tard (le RDV reste dans le planning)</div>
+    </div>`;
+  ov.style.display = "";
+  debloqueAudio();
+  const fin = new Date(r.offre_depuis).getTime() + 120000;
+  const tick = () => {
+    const reste = Math.round((fin - maintenantServeur()) / 1000);
+    const chrono = el("offreChrono");
+    if (!chrono) return;
+    if (reste <= 0) {
+      chrono.classList.add("rouge");
+      chrono.querySelector("i").style.width = "100%";
+      el("offreCompte").textContent = r.statut === "propose"
+        ? "Fenêtre passée — le RDV va partir à toute l'équipe, tu peux encore le prendre."
+        : "Fenêtre passée — le RDV reste à prendre, premier arrivé.";
+    } else {
+      chrono.classList.toggle("rouge", reste <= 30);
+      chrono.querySelector("i").style.width = Math.max(0, Math.round(reste / 120 * 100)) + "%";
+      el("offreCompte").textContent = "Il te reste " + Math.floor(reste / 60) + ":" + pad(reste % 60) + " pour le prendre en premier";
+    }
+  };
+  tick();
+  if (OFFRE_TIMER) clearInterval(OFFRE_TIMER);
+  OFFRE_TIMER = setInterval(tick, 1000);
+  const ferme = () => { ov.style.display = "none"; if (OFFRE_TIMER) { clearInterval(OFFRE_TIMER); OFFRE_TIMER = null; } };
+  el("offrePrendre").addEventListener("click", async () => {
+    try { await call("rdv_accept", { id: r.id }); ferme(); await loadData(); showPage("planning"); }
+    catch (e) { alert(e.message); ferme(); loadData(); }
+  });
+  el("offrePasser").addEventListener("click", async () => {
+    try { await call("rdv_refuse", { id: r.id }); } catch (_) {}
+    OFFRES_VUES.add(r.id);
+    ferme();
+    loadData();
+  });
+  el("offrePlusTard").addEventListener("click", () => { OFFRES_VUES.add(r.id); ferme(); });
+}
+
+// ----- Mode file : traiter les relances une par une -----
+function majBoutonFile(n) {
+  const b = el("fileDemarrer");
+  b.style.display = n && MOI.role !== "observateur" ? "" : "none";
+  b.textContent = "Démarrer la file (" + n + ")";
+}
+function montreFile() {
+  const ov = el("fileOverlay");
+  if (FILE_IDX >= FILE_RELANCES.length) {
+    ov.innerHTML = `<div class="offre-carte"><div class="offre-titre">File terminée</div>
+      <div class="offre-infos">Toutes les relances du jour sont traitées.</div>
+      <div class="offre-actions"><button class="abtn oui" id="fileFin">Fermer</button></div></div>`;
+    ov.style.display = "";
+    el("fileFin").addEventListener("click", () => { ov.style.display = "none"; loadData(); });
+    return;
+  }
+  const r = FILE_RELANCES[FILE_IDX];
+  const today = SalesStats.ymdLocal(new Date());
+  ov.innerHTML = `
+    <div class="offre-carte">
+      <div class="offre-type">Relance ${FILE_IDX + 1} / ${FILE_RELANCES.length} · ${esc(r.categorie || "")}</div>
+      <div class="offre-titre">${esc(r.prospect)}</div>
+      <div class="offre-quand">${esc(r.contact || "")}</div>
+      <div class="offre-infos">Pour le ${esc(r.date)} · ${r.echange ? "dernier échange " + esc(jolieDate(r.echange, today)) : ""}${r.source ? " · " + esc(r.source) : ""}${r.notes ? "<br>" + esc(r.notes) : ""}</div>
+      <div class="offre-actions">
+        <button class="abtn" id="fileCopier">Copier le message</button>
+        <button class="abtn oui" id="fileLog">Log le résultat</button>
+        <button class="abtn" id="fileSuivant">Suivant</button>
+      </div>
+      <div class="offre-plus-tard" id="fileQuitter">Quitter la file</div>
+    </div>`;
+  ov.style.display = "";
+  el("fileCopier").addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(msgRelance(r)); el("fileCopier").textContent = "Copié, colle-le en DM"; }
+    catch (_) { prompt("Copie le message :", msgRelance(r)); }
+  });
+  el("fileLog").addEventListener("click", () => {
+    ov.style.display = "none";
+    showPage("log"); resetForm(); setType(r.type === "Vente" ? "Vente" : "Setting");
+    el("inProspect").value = r.prospect === "?" ? "" : r.prospect;
+    if (String(r.contact).startsWith("@")) el("inInsta").value = r.contact;
+    if (r.source) el("inSource").value = r.source;
+  });
+  el("fileSuivant").addEventListener("click", () => { FILE_IDX++; montreFile(); });
+  el("fileQuitter").addEventListener("click", () => { ov.style.display = "none"; });
+}
+
+// ----- Script en contexte -----
+function montreScript() {
+  const p = PARAMS || {};
+  const morceaux = [];
+  if (TYPE === "Setting") {
+    if (p.script_setting) morceaux.push(["Script setting", p.script_setting]);
+  } else {
+    if (p.script_vente1) morceaux.push(["Phase 1 — présentation", p.script_vente1]);
+    if (p.script_vente2) morceaux.push(["Phase 2 — closing", p.script_vente2]);
+    const OBJ = { obj_argent: "Objection argent", obj_timing: "Objection timing", obj_conjoint: "Conjoint ou associé", obj_confiance: "Peur ou confiance", obj_ecran: "Écran de fumée" };
+    Object.entries(OBJ).forEach(([k, lbl]) => { if (p[k]) morceaux.push([lbl, p[k]]); });
+  }
+  const ov = el("scriptOverlay");
+  ov.innerHTML = `<div class="offre-carte">
+    <div class="offre-titre" style="font-size:19px">Script — ${TYPE === "Setting" ? "setting" : "vente"}</div>
+    ${morceaux.length ? morceaux.map(([t, x]) => `<div style="margin-top:14px"><div class="stitre" style="font-size:13.5px;color:var(--accent)">${esc(t)}</div><div class="offre-infos" style="white-space:pre-wrap;margin-bottom:0">${esc(x)}</div></div>`).join("") : `<div class="offre-infos">Aucun script rempli pour l'instant. Tony peut les écrire dans Réglages, onglet Scripts.</div>`}
+    <div class="offre-actions" style="margin-top:18px"><button class="abtn oui" id="scriptFermer">Fermer</button></div>
+  </div>`;
+  ov.style.display = "";
+  el("scriptFermer").addEventListener("click", () => { ov.style.display = "none"; });
+}
+
 // ----- Réglages (admin) : rappels automatiques -----
 const CIBLE_LABEL = { assigne: "À celui qui a le RDV", setter: "Au setter", admin: "À toi (admin)" };
 let RG_TAB = "alertes";
@@ -824,6 +1101,7 @@ async function chargeRappels() {
         <button class="rg-tab" data-tab="alertes">Alertes équipe</button>
         <button class="rg-tab" data-tab="rappels">Rappels avant RDV</button>
         <button class="rg-tab" data-tab="messages">Messages prospects</button>
+        <button class="rg-tab" data-tab="scripts">Scripts</button>
       </div>
       <div class="rg-pan" id="pan-alertes">
       <div class="sinfo" style="margin-bottom:14px;color:var(--muted)">Les textes des alertes envoyées à l'équipe. Touche une ligne pour la modifier, les balises se remplissent toutes seules.</div>` +
@@ -872,7 +1150,30 @@ async function chargeRappels() {
         <summary>${esc(CAT_LABEL[cat] || cat)}</summary>
         <div class="field"><textarea class="msg-txt" maxlength="500">${esc(MSG_SRV[cat] || MSG_RELANCE[cat] || MSG_RELANCE.defaut)}</textarea></div>
         <div class="abtns"><button class="abtn oui msg-save">Enregistrer</button></div>
+      </details>`).join("") + `</div>
+      <div class="rg-pan" id="pan-scripts" style="display:none">
+      <div class="sinfo" style="margin-bottom:14px;color:var(--muted)">Tes scripts d'appel et tes réponses aux objections. L'équipe les consulte depuis le bouton « Voir le script » de la page Log.</div>` +
+      [["script_setting", "Script setting"], ["script_vente1", "Vente — phase 1 (présentation)"], ["script_vente2", "Vente — phase 2 (closing)"],
+       ["obj_argent", "Réponse — objection argent"], ["obj_timing", "Réponse — logistique ou timing"], ["obj_conjoint", "Réponse — conjoint ou associé"],
+       ["obj_confiance", "Réponse — peur ou confiance"], ["obj_ecran", "Réponse — écran de fumée"]].map(([cle, lbl]) => `
+      <details class="slot regl" data-pcle="${cle}">
+        <summary>${lbl}${(PARAMS[cle] || "").trim() ? "" : " · vide"}</summary>
+        <div class="field"><textarea class="prm-txt" maxlength="4000" style="min-height:120px">${esc(PARAMS[cle] || "")}</textarea></div>
+        <div class="abtns"><button class="abtn oui prm-save">Enregistrer</button></div>
       </details>`).join("") + `</div>`;
+    z.querySelectorAll(".prm-save").forEach(b => b.addEventListener("click", async () => {
+      if (b.disabled) return;
+      const sl = b.closest(".slot");
+      b.disabled = true;
+      b.textContent = "Enregistrement…";
+      try {
+        const v = sl.querySelector(".prm-txt").value.slice(0, 4000);
+        await call("params_save", { cle: sl.dataset.pcle, valeur: v });
+        PARAMS[sl.dataset.pcle] = v;
+        b.textContent = "Enregistré";
+        setTimeout(() => { b.textContent = "Enregistrer"; b.disabled = false; }, 1500);
+      } catch (e) { alert(e.message); b.textContent = "Enregistrer"; b.disabled = false; }
+    }));
     const montreTab = t => {
       RG_TAB = t;
       z.querySelectorAll(".rg-pan").forEach(p => { p.style.display = p.id === "pan-" + t ? "" : "none"; });
@@ -1042,6 +1343,7 @@ async function loadData() {
     const d = await call("data");
     RECORDS = (d.calls || []).map(adapt);
     RDVS = d.rdvs || [];
+    if (d.maintenant) SERVER_OFFSET = new Date(d.maintenant).getTime() - Date.now();
     // Nouvelle vente closée par quelqu'un d'autre depuis le dernier chargement ?
     const Fx = SalesStats.F;
     const closesIds = new Set(RECORDS.filter(r => (r.fields[Fx.resClosing] || r.fields[Fx.resPres]) === "Closé").map(r => r.id));
@@ -1052,6 +1354,7 @@ async function loadData() {
     CLOSES_VUS = closesIds;
     majProspectsIdx();
     render();
+    majOffre();
     el("err").style.display = "none";
   } catch (e) {
     el("err").textContent = "Impossible de charger : " + e.message;
@@ -1079,6 +1382,7 @@ async function init() {
     const cfg = await call("config");
     MOI = cfg.moi; EQUIPE = cfg.equipe || [];
     MSG_SRV = cfg.messages || {};
+    PARAMS = cfg.parametres || {};
   } catch (e) {
     brancheLock();
     el("lockMsg").textContent = e.message === "code invalide"
@@ -1128,6 +1432,9 @@ async function init() {
   document.querySelectorAll("#typeBtns button").forEach(b => b.addEventListener("click", () => setType(b.dataset.t)));
   ["inResSetting", "inCause", "inResVente", "inRelSet", "inRelNs", "inRelPc", "inRelNsV"].forEach(i => el(i).addEventListener("change", majConditionnels));
   el("periodSel").addEventListener("change", () => { PERIOD = el("periodSel").value; render(); });
+  el("pipeFiltre").addEventListener("change", render);
+  el("fileDemarrer").addEventListener("click", () => { FILE_IDX = 0; montreFile(); });
+  el("btnScript").addEventListener("click", montreScript);
   el("vueMoi").addEventListener("change", () => { VUEMOI = el("vueMoi").value; render(); });
   el("planMoi").addEventListener("click", () => { PLANFILTRE = "moi"; el("planMoi").classList.add("active"); el("planTous").classList.remove("active"); render(); });
   el("planTous").addEventListener("click", () => { PLANFILTRE = "tous"; el("planTous").classList.add("active"); el("planMoi").classList.remove("active"); render(); });
