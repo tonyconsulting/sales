@@ -244,6 +244,8 @@
 <div class="overlay-plein" id="offreOverlay" style="display:none"></div>
 <div class="overlay-plein" id="fileOverlay" style="display:none"></div>
 <div class="overlay-plein" id="scriptOverlay" style="display:none"></div>
+<div class="overlay-plein" id="ficheOverlay" style="display:none"></div>
+<div class="overlay-plein" id="callOverlay" style="display:none"></div>
 
 <div class="app" id="app" style="display:none">
   <div class="topbar">
@@ -409,6 +411,13 @@
               <div class="field"><label>Offre</label><select id="inOffreV"><option value=""></option><option>Accompagnement</option><option>Autre</option></select></div>
               <div class="field"><label>Montant de la vente (€) *</label><input type="number" id="inMontantV" min="0" step="1"></div>
             </div>
+            <div class="row2">
+              <div class="field"><label>Argent reçu ?</label>
+                <select id="inEncaisseSel"><option value="oui" selected>Oui, encaissé</option><option value="r2">Pas encore, je cale un R2</option></select>
+              </div>
+              <div class="field" id="fR2Quand" style="display:none"><label>R2 d'encaissement le *</label><input type="datetime-local" id="inR2Quand"></div>
+            </div>
+            <div class="field" id="fR2Note" style="display:none"><label>Pourquoi (visible au planning)</label><input id="inR2Note" maxlength="120" placeholder="ex : plafond de virement bloqué"></div>
           </div>
           <div class="field" id="fObjection" style="display:none"><label>Objection principale de l'appel</label>
             <select id="inObjection"><option selected>Aucune</option><option>Argent</option><option>Logistique ou timing</option><option>Conjoint ou associé</option><option>Peur ou confiance</option><option>Écran de fumée</option></select>
@@ -494,10 +503,14 @@
       <div class="kanban" id="kanban"></div>
     </section>
 
-    <section class="page" id="page-prospects"><div class="tscroll" id="prospectsT"></div></section>
+    <section class="page" id="page-prospects">
+      <div class="field" style="max-width:360px;margin-bottom:12px"><input id="prospectCherche" placeholder="Chercher un prospect ou un @insta" autocomplete="off"></div>
+      <div class="tscroll" id="prospectsT"></div>
+    </section>
 
     <section class="page" id="page-planning">
       <div id="notifZone"></div>
+      <div id="offZone"></div>
       <div id="aprendre"></div>
       <div id="propositions"></div>
       <h2>Emploi du temps <span style="color:var(--muted);font-weight:400">(grisé = en attente, plein = confirmé)</span></h2>
@@ -507,7 +520,10 @@
       </div>
       <div id="planning"></div>
     </section>
-    <section class="page" id="page-appels"><div class="tscroll" id="appels"></div></section>
+    <section class="page" id="page-appels">
+      <div class="tscroll" id="appels"></div>
+      <div id="corbeilleZone"></div>
+    </section>
     <section class="page" id="page-relances">
       <div class="controls" style="margin-bottom:14px"><button class="abtn oui" id="fileDemarrer" style="display:none">Démarrer la file</button></div>
       <div class="tscroll" id="relances"></div>
@@ -516,6 +532,8 @@
     <section class="page" id="page-reglages"><div id="rappelsZone"></div></section>
 
     <section class="page" id="page-kpi">
+      <div id="bilanZone"></div>
+      <div id="comparatifZone"></div>
       <div class="charts" id="charts"></div>
       <h2>Par personne (période sélectionnée)</h2>
       <div class="tscroll" id="people"></div>
@@ -531,7 +549,7 @@
   </main>
 </div>
 
-<script src="stats.js?v=18"></script>
-<script src="app.js?v=18"></script>
+<script src="stats.js?v=19"></script>
+<script src="app.js?v=19"></script>
 </body>
 </html>
