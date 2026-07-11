@@ -137,8 +137,11 @@
     return S;
   }
 
+  // Seuils de « pourrissement » (jours sans contact) par état
+  const ROT = { "Setting calé": 3, "Vu en setting": 5, "RDV de vente": 5, "À relancer": 14, "Contacté": 5 };
+
   // Fiche agrégée par prospect (tout l'historique)
-  function prospectStates(all) {
+  function prospectStates(all, today) {
     const st = {};
     all.forEach(r => {
       const k = keyOf(r);
@@ -189,6 +192,11 @@
       const caleActif = s.cale && (!s.perdu || s.caleLe > s.perduLe);
       s.etat = s.close ? "Closé" : relanceActive ? "À relancer" : enVenteActif ? "RDV de vente"
         : vuActif ? "Vu en setting" : caleActif ? "Setting calé" : s.perdu ? "Perdu" : "Contacté";
+      // Pourrissement : X jours sans aucun contact, pour les états vivants
+      if (today && s.dernier && ROT[s.etat] !== undefined) {
+        s.joursSans = Math.round((new Date(today + "T12:00:00") - new Date(s.dernier + "T12:00:00")) / 86400000);
+        s.sommeil = s.joursSans > ROT[s.etat];
+      } else { s.joursSans = 0; s.sommeil = false; }
     });
     return st;
   }
@@ -236,7 +244,7 @@
     finalise(global);
     Object.values(people).forEach(finalise);
 
-    const st = prospectStates(all);
+    const st = prospectStates(all, today);
     const prospects = Object.values(st).sort((a, c) => c.dernier.localeCompare(a.dernier));
 
     // Relances dues : uniquement les prospects dont l'état ACTUEL est
