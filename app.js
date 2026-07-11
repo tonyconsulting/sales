@@ -39,6 +39,20 @@ const PAGES = {
   reglages: ["Réglages", "Rappels automatiques avant les RDV"]
 };
 const ETAT_PILL = { "Closé": "", "À relancer": "amber", "RDV de vente": "", "Vu en setting": "grey", "Setting calé": "grey", "Perdu": "red", "Contacté": "grey" };
+// Messages de relance prêts à coller (DM Instagram), par catégorie
+const MSG_RELANCE = {
+  "No-show": "Coucou {prenom} ! On avait rendez-vous {date} et on s'est loupés, aucun souci ça arrive. Tu préfères qu'on recale ça quand ?",
+  "Pas le budget": "Coucou {prenom} ! On s'était parlé {date} et le timing n'était pas le bon côté budget. Je repense à toi : ça a évolué de ton côté ?",
+  "Réfléchit": "Coucou {prenom} ! Tu voulais prendre le temps d'y réfléchir après notre échange, ce que je comprends. Tu en es où ?",
+  "À rappeler": "Coucou {prenom} ! Comme convenu je reviens vers toi suite à notre échange. C'est toujours ok pour qu'on s'appelle ?",
+  "À relancer": "Coucou {prenom} ! Comme convenu on se recontacte suite à notre appel. Toujours partant ? Dis-moi tes dispos.",
+  "Pas intéressé": "Coucou {prenom} ! On s'était parlé {date}, je voulais prendre de tes nouvelles. Si les choses ont bougé de ton côté, je suis là.",
+  defaut: "Coucou {prenom} ! Je reviens vers toi suite à notre dernier échange. Dis-moi quand tu es dispo pour qu'on s'appelle."
+};
+const msgRelance = r => (MSG_RELANCE[r.categorie] || MSG_RELANCE.defaut)
+  .replace("{prenom}", (r.prospect || "").trim().split(/\s+/)[0] || "")
+  .replace("{date}", r.echange ? jolieDate(r.echange, SalesStats.ymdLocal(new Date())) : "récemment");
+
 // Options des menus « Résultat… » rapides (prospects + retards)
 const RES_Q_SETTING = ["No-show", "Non abouti", "RDV de vente calé"];
 const RES_Q_VENTE = ["Closé", "Pas closé", "No-show", "À relancer"];
@@ -416,14 +430,23 @@ function render() {
 
   el("relances").innerHTML = s.relances.length
     ? tableHTML(
-        [{ t: "Pour le" }, { t: "Prospect" }, { t: "Contact" }, { t: "Source" }, { t: "Qui" }, { t: "Notes" }, { t: "" }],
+        [{ t: "Pour le" }, { t: "Prospect" }, { t: "Contact" }, { t: "Catégorie" }, { t: "Source" }, { t: "Qui" }, { t: "Notes" }, { t: "" }],
         s.relances.map(r => [
           { t: r.date < s.today ? `<span class="late">${esc(r.date)}</span>` : esc(r.date) },
-          { t: esc(r.prospect) }, { t: esc(r.contact) }, { t: esc(r.source || "–") }, { t: esc(r.qui) },
+          { t: esc(r.prospect) }, { t: esc(r.contact) },
+          { t: `<span class="pill amber">${esc(r.categorie || "–")}</span>` + (r.echange ? `<div style="color:var(--muted);font-size:11px;margin-top:3px">échange du ${esc(jolieDate(r.echange, s.today))}</div>` : "") },
+          { t: esc(r.source || "–") }, { t: esc(r.qui) },
           { t: r.notes ? `<details><summary>voir</summary><div>${esc(r.notes)}</div></details>` : "" },
-          { t: MOI.role === "observateur" ? "" : `<button class="abtn oui rel-log" data-nom="${esc(r.prospect)}" data-contact="${esc(r.contact)}" data-type="${r.type === "Vente" ? "Vente" : "Setting"}" data-source="${esc(r.source || "")}">Log le résultat</button>` }
+          { t: MOI.role === "observateur" ? "" : `<button class="abtn rel-copie" data-msg="${esc(msgRelance(r))}">Copier le message</button> <button class="abtn oui rel-log" data-nom="${esc(r.prospect)}" data-contact="${esc(r.contact)}" data-type="${r.type === "Vente" ? "Vente" : "Setting"}" data-source="${esc(r.source || "")}">Log le résultat</button>` }
         ]))
     : `<div class="empty">Aucune relance en attente.</div>`;
+  document.querySelectorAll(".rel-copie").forEach(b => b.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(b.dataset.msg);
+      const t = b.textContent; b.textContent = "Copié, colle-le en DM";
+      setTimeout(() => { b.textContent = t; }, 2000);
+    } catch (_) { prompt("Copie le message :", b.dataset.msg); }
+  }));
   document.querySelectorAll(".rel-log").forEach(b => b.addEventListener("click", () => {
     showPage("log"); resetForm(); setType(b.dataset.type);
     el("inProspect").value = b.dataset.nom === "?" ? "" : b.dataset.nom;
@@ -628,12 +651,25 @@ function majConditionnels() {
   const rs = el("inResSetting").value;
   el("caleBlock").style.display = rs === "Calé (à venir)" ? "" : "none";
   el("causeBlock").style.display = rs === "Non abouti" ? "" : "none";
+  el("noshowBlock").style.display = rs === "No-show" ? "" : "none";
   el("suiteBlock").style.display = rs === "RDV de vente calé" ? "" : "none";
-  el("rappelBlock").style.display = el("inCause").value === "À rappeler" ? "" : "none";
   const rv = el("inResVente").value;
   el("closeVBlock").style.display = rv === "Closé" ? "" : "none";
   el("causeVBlock").style.display = rv === "Pas closé" ? "" : "none";
+  el("noshowVBlock").style.display = rv === "No-show" ? "" : "none";
   el("relanceVBlock").style.display = rv === "À relancer" ? "" : "none";
+  ["Set", "Ns", "Pc", "NsV"].forEach(p => {
+    el("fRel" + p + "Date").style.display = el("inRel" + p).value === "date" ? "" : "none";
+  });
+}
+// Sélecteur de relance -> date (AAAA-MM-JJ) ; null = date précise manquante
+function dateRelanceDepuis(pfx) {
+  const v = el("inRel" + pfx).value;
+  if (!v) return "";
+  if (v === "date") return el("inRel" + pfx + "Date").value || null;
+  const d = new Date();
+  d.setDate(d.getDate() + Number(v));
+  return SalesStats.ymdLocal(d);
 }
 function resetForm() {
   PENDING_RDV = null;
@@ -676,13 +712,18 @@ async function submitForm(e) {
       if (!el("inCaleLe").value) return alert("Indique quand le setting est calé.");
       c.rdv_le = new Date(el("inCaleLe").value).toISOString();
     }
+    if (c.res_setting === "No-show") {
+      const dr = dateRelanceDepuis("Ns");
+      if (dr === null) return alert("Choisis la date de relance.");
+      if (dr) c.date_relance = dr;
+    }
     if (c.res_setting === "Non abouti") {
       c.cause = el("inCause").value;
       if (!c.cause) return alert("La cause est obligatoire.");
-      if (c.cause === "À rappeler") {
-        if (!el("inDateRappel").value) return alert("Indique la date de rappel (sinon la relance ne sonnera jamais).");
-        c.date_relance = el("inDateRappel").value;
-      }
+      const dr = dateRelanceDepuis("Set");
+      if (dr === null) return alert("Choisis la date de relance.");
+      if (c.cause === "À rappeler" && !dr) return alert("« À rappeler » = choisis quand le relancer.");
+      if (dr) c.date_relance = dr;
     }
     if (c.res_setting === "RDV de vente calé") {
       if (!el("inSuiteLe").value) return alert("Indique quand le RDV de vente est calé.");
@@ -705,7 +746,18 @@ async function submitForm(e) {
       c.paiement = "Comptant";
       c.encaisse = c.montant;
     }
-    if (c.res_closing === "Pas closé") c.cause = el("inCauseV").value;
+    if (c.res_closing === "Pas closé") {
+      c.cause = el("inCauseV").value;
+      if (!c.cause) return alert("La cause est obligatoire.");
+      const dr = dateRelanceDepuis("Pc");
+      if (dr === null) return alert("Choisis la date de relance.");
+      if (dr) c.date_relance = dr;
+    }
+    if (c.res_closing === "No-show") {
+      const dr = dateRelanceDepuis("NsV");
+      if (dr === null) return alert("Choisis la date de relance.");
+      if (dr) c.date_relance = dr;
+    }
     if (c.res_closing === "À relancer") {
       if (!el("inDateRelanceV").value) return alert("Indique la date de relance (sinon la relance ne sonnera jamais).");
       c.date_relance = el("inDateRelanceV").value;
@@ -984,7 +1036,7 @@ async function init() {
   showPage(MOI.role === "admin" || MOI.role === "observateur" ? "dashboard" : "log");
   document.querySelectorAll("#nav button").forEach(b => b.addEventListener("click", () => { showPage(b.dataset.page); fermeTiroir(); }));
   document.querySelectorAll("#typeBtns button").forEach(b => b.addEventListener("click", () => setType(b.dataset.t)));
-  ["inResSetting", "inCause", "inResVente"].forEach(i => el(i).addEventListener("change", majConditionnels));
+  ["inResSetting", "inCause", "inResVente", "inRelSet", "inRelNs", "inRelPc", "inRelNsV"].forEach(i => el(i).addEventListener("change", majConditionnels));
   el("periodSel").addEventListener("change", () => { PERIOD = el("periodSel").value; render(); });
   el("vueMoi").addEventListener("change", () => { VUEMOI = el("vueMoi").value; render(); });
   el("planMoi").addEventListener("click", () => { PLANFILTRE = "moi"; el("planMoi").classList.add("active"); el("planTous").classList.remove("active"); render(); });
