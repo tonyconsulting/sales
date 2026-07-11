@@ -155,18 +155,25 @@
       if (isType(r, "Setting")) {
         if (!s.source && f[F.source]) s.source = f[F.source];
         const res = f[F.resSetting];
-        if (res === SET_CALE || res === SET_NOSHOW) { s.cale = true; if (dts > s.caleLe) s.caleLe = dts; }
+        if (res === SET_CALE || res === SET_NOSHOW) {
+          s.cale = true; if (dts > s.caleLe) s.caleLe = dts;
+          if (res === SET_NOSHOW && f[F.relance]) { s.relance = true; if (dts > s.relanceLe) s.relanceLe = dts; }
+        }
         if (res === SET_NONABOUTI) {
           s.vu = true; if (dts > s.vuLe) s.vuLe = dts;
-          if ((f[F.cause] || "") !== "À rappeler") { s.perdu = true; if (dts > s.perduLe) s.perduLe = dts; }
-          else { s.relance = true; if (dts > s.relanceLe) s.relanceLe = dts; }
+          if (f[F.relance]) { s.relance = true; if (dts > s.relanceLe) s.relanceLe = dts; }
+          else { s.perdu = true; if (dts > s.perduLe) s.perduLe = dts; }
         }
         if (res === SET_PREZ || res === SET_CLOSING || res === SET_VENTE) { s.vu = true; if (dts > s.vuLe) s.vuLe = dts; s.enVente = true; if (dts > s.enVenteLe) s.enVenteLe = dts; }
       }
       if (estVente(r)) {
         const res = resVente(f);
         if (res === "Closé") { s.close = true; s.vendu += num(f[F.montant]); }
-        if (res === "Pas closé") { s.perdu = true; if (dts > s.perduLe) s.perduLe = dts; }
+        if (res === "Pas closé") {
+          if (f[F.relance]) { s.relance = true; if (dts > s.relanceLe) s.relanceLe = dts; }
+          else { s.perdu = true; if (dts > s.perduLe) s.perduLe = dts; }
+        }
+        if (res === "No-show" && f[F.relance]) { s.relance = true; if (dts > s.relanceLe) s.relanceLe = dts; }
         if (res === "À relancer") { s.relance = true; if (dts > s.relanceLe) { s.relanceLe = dts; s.relanceEur = num(f[F.montant]) || s.relanceEur; } }
         s.encaisse += num(f[F.encaisse]);
       }
@@ -238,12 +245,18 @@
     const relParProspect = {};
     all.forEach(r => {
       const f = r.fields;
-      const rel = ((estVente(r) && resVente(f) === "À relancer") ||
-                   (f[F.resSetting] === SET_NONABOUTI && f[F.cause] === "À rappeler"));
       const dr = f[F.relance] ? String(f[F.relance]).slice(0, 10) : "";
-      if (!rel || !dr || dr > today) return;
+      if (!dr || dr > today) return;
+      if (!isType(r, "Setting") && !estVente(r)) return;
       const k = keyOf(r);
       if (!k || !st[k] || st[k].etat !== "À relancer") return;
+      let categorie;
+      if (isType(r, "Setting")) {
+        categorie = f[F.resSetting] === SET_NOSHOW ? "No-show" : (f[F.cause] || "À rappeler");
+      } else {
+        const rv = resVente(f);
+        categorie = rv === "No-show" ? "No-show" : rv === "Pas closé" ? (f[F.cause] || "Pas closé") : "À relancer";
+      }
       const cur = relParProspect[k];
       if (!cur || dr > cur.date) relParProspect[k] = {
         prospect: f[F.prospect] || st[k].nom || "?",
@@ -252,7 +265,9 @@
         qui: f[F.qui] || "?",
         notes: f[F.notes] || "",
         type: estVente(r) ? "Vente" : "Setting",
-        source: st[k].source || f[F.source] || ""
+        source: st[k].source || f[F.source] || "",
+        categorie,
+        echange: dateOf(r)
       };
     });
     const relances = Object.values(relParProspect).sort((a, c) => a.date.localeCompare(c.date));
