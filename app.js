@@ -812,6 +812,7 @@ async function submitForm(e) {
 
 // ----- Réglages (admin) : rappels automatiques -----
 const CIBLE_LABEL = { assigne: "À celui qui a le RDV", setter: "Au setter", admin: "À toi (admin)" };
+let RG_TAB = "alertes";
 async function chargeRappels() {
   const z = el("rappelsZone");
   z.innerHTML = `<div class="empty">Chargement…</div>`;
@@ -819,22 +820,29 @@ async function chargeRappels() {
     const d = await call("rappels_list");
     const rows = d.rappels || [];
     const nt = d.notifs || {};
-    z.innerHTML = `<h2 style="margin-top:4px">Espace 1 — Notifications de l'équipe</h2>
-      <div class="sinfo" style="margin-bottom:14px;color:var(--muted)">Les textes des alertes envoyées à l'équipe. Les balises se remplissent toutes seules.</div>` +
+    z.innerHTML = `<div class="controls" style="margin:2px 0 18px">
+        <button class="rg-tab" data-tab="alertes">Alertes équipe</button>
+        <button class="rg-tab" data-tab="rappels">Rappels avant RDV</button>
+        <button class="rg-tab" data-tab="messages">Messages prospects</button>
+      </div>
+      <div class="rg-pan" id="pan-alertes">
+      <div class="sinfo" style="margin-bottom:14px;color:var(--muted)">Les textes des alertes envoyées à l'équipe. Touche une ligne pour la modifier, les balises se remplissent toutes seules.</div>` +
       NOTIFS_CATALOGUE.map(n => {
         const cur = nt[n.cle] || { titre: n.defaut[0], corps: n.defaut[1] };
         return `
-      <div class="slot" data-ncle="${n.cle}">
-        <div class="stitre">${n.label}</div>
+      <details class="slot regl" data-ncle="${n.cle}">
+        <summary>${n.label}</summary>
         <div class="field"><label>Titre</label>${pilule(IC_REG.titre, `<input class="nt-titre" maxlength="80" value="${esc(cur.titre)}">`)}</div>
         <div class="field"><label>Message (balises : ${esc(n.balises)})</label><textarea class="nt-corps" maxlength="300">${esc(cur.corps)}</textarea></div>
         <div class="abtns"><button class="abtn oui nt-save">Enregistrer</button></div>
-      </div>`;
+      </details>`;
       }).join("") +
-      `<h2 style="margin-top:34px">Rappels automatiques avant les RDV</h2>
+      `</div>
+      <div class="rg-pan" id="pan-rappels" style="display:none">
       <div class="sinfo" style="margin-bottom:14px;color:var(--muted)">Notifications envoyées automatiquement avant chaque RDV (vérification toutes les 5 minutes, délai minimum 5). Balises utilisables dans le message : {prospect} {heure} {type} {insta}</div>` +
       rows.map(g => `
-      <div class="slot" data-rid="${g.id}">
+      <details class="slot regl" data-rid="${g.id}">
+        <summary>${CIBLE_LABEL[g.cible] || esc(g.cible)} · ${g.delai_min} min avant${g.seulement_statut === "ouvert" ? " · sans preneur" : ""}${g.actif ? "" : " · COUPÉ"}</summary>
         <div class="row2">
           <div class="field"><label>Destinataire</label>${pilule(IC_REG.qui, `
             <select class="rg-cible">
@@ -854,16 +862,24 @@ async function chargeRappels() {
         </div>
         <div class="field"><label>Message (300 caractères max)</label><textarea class="rg-msg" maxlength="300">${esc(g.message)}</textarea></div>
         <div class="abtns"><button class="abtn oui rg-save">Enregistrer</button><button class="abtn non rg-del">Supprimer</button></div>
-      </div>`).join("") +
-      `<div class="abtns" style="margin-top:6px"><button class="abtn" id="rgAjout">Ajouter un rappel</button></div>` +
-      `<h2 style="margin-top:34px">Espace 2 — Messages aux prospects (bouton « Copier le message »)</h2>
-      <div class="sinfo" style="margin-bottom:14px;color:var(--muted)">Un texte par catégorie, copié tel quel par l'équipe. Balises : {prenom} = prénom du prospect, {date} = date du dernier échange.</div>` +
+      </details>`).join("") +
+      `<div class="abtns" style="margin-top:6px"><button class="abtn" id="rgAjout">Ajouter un rappel</button></div>
+      </div>
+      <div class="rg-pan" id="pan-messages" style="display:none">
+      <div class="sinfo" style="margin-bottom:14px;color:var(--muted)">Les textes du bouton « Copier le message » des relances, copiés tels quels par l'équipe. Balises : {prenom} = prénom du prospect, {date} = date du dernier échange.</div>` +
       CATS_MSG.map(cat => `
-      <div class="slot" data-cat="${esc(cat)}">
-        <div class="stitre">${esc(CAT_LABEL[cat] || cat)}</div>
+      <details class="slot regl" data-cat="${esc(cat)}">
+        <summary>${esc(CAT_LABEL[cat] || cat)}</summary>
         <div class="field"><textarea class="msg-txt" maxlength="500">${esc(MSG_SRV[cat] || MSG_RELANCE[cat] || MSG_RELANCE.defaut)}</textarea></div>
         <div class="abtns"><button class="abtn oui msg-save">Enregistrer</button></div>
-      </div>`).join("");
+      </details>`).join("") + `</div>`;
+    const montreTab = t => {
+      RG_TAB = t;
+      z.querySelectorAll(".rg-pan").forEach(p => { p.style.display = p.id === "pan-" + t ? "" : "none"; });
+      z.querySelectorAll(".rg-tab").forEach(b => b.classList.toggle("active", b.dataset.tab === t));
+    };
+    z.querySelectorAll(".rg-tab").forEach(b => b.addEventListener("click", () => montreTab(b.dataset.tab)));
+    montreTab(RG_TAB);
     z.querySelectorAll(".rg-save").forEach(b => b.addEventListener("click", async () => {
       if (b.disabled) return;
       const sl = b.closest(".slot");
