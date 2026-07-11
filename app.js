@@ -269,7 +269,7 @@ function renderPlanning(today) {
         </div>
       </div>`).join("");
   }
-  const mesConfirmes = actifs.filter(r => r.statut === "confirme" && (admin || r.assigne_a === moi || r.setter === moi))
+  const mesConfirmes = actifs.filter(r => r.statut === "confirme" && r.type !== "Perso" && (admin || r.assigne_a === moi || r.setter === moi))
     .sort((a, c) => a.quand.localeCompare(c.quand));
   const deplaceHTML = r => `
         <div class="decale-inline" id="dep-${r.id}">
@@ -814,7 +814,7 @@ function render() {
 
   // Bandeau « En retard » du dashboard : la dette avant le neuf
   const relRetard = s.relances.filter(r => r.date < s.today && (MOI.role === "admin" || r.qui === MOI.nom)).length;
-  const nbRegulariser = rdvsVisibles().filter(r => r.statut === "confirme" &&
+  const nbRegulariser = rdvsVisibles().filter(r => r.statut === "confirme" && !["Perso", "R2"].includes(r.type) &&
     r.quand < new Date(Date.now() - 48 * 3600 * 1000).toISOString() &&
     (MOI.role === "admin" || r.assigne_a === MOI.nom || r.setter === MOI.nom)).length;
   const nbSansPreneur = MOI.role === "admin" ? rdvsVisibles().filter(r => r.statut === "ouvert" && r.offre_niveau >= 3).length : 0;
@@ -1292,7 +1292,7 @@ const JOURS_COURTS = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
 function agendaRdvs() {
   return rdvsVisibles().filter(r => r.statut !== "annule" && r.quand);
 }
-const agTypeCls = r => r.type === "R2" ? "r2" : r.type === "Setting" ? "setting" : "";
+const agTypeCls = r => r.type === "R2" ? "r2" : r.type === "Perso" ? "perso" : r.type === "Setting" ? "setting" : "";
 const agAttente = r => !["confirme", "fait"].includes(r.statut);
 function renderAgenda() {
   const z = el("agenda");
@@ -1300,6 +1300,7 @@ function renderAgenda() {
   const today = SalesStats.ymdLocal(new Date());
   const ref = new Date(AGENDA_REF);
   const rdvs = agendaRdvs();
+  document.querySelectorAll(".agseg button").forEach(b => b.classList.toggle("active", b.dataset.agmode === AGENDA_MODE));
   if (AGENDA_MODE === "mois") {
     el("agTitre").textContent = MOIS_NOMS[ref.getMonth()][0].toUpperCase() + MOIS_NOMS[ref.getMonth()].slice(1) + " " + ref.getFullYear();
     const debut = new Date(ref.getFullYear(), ref.getMonth(), 1, 12);
@@ -1319,15 +1320,18 @@ function renderAgenda() {
     z.innerHTML = `<div class="cal-head">${JOURS_COURTS.map(x => `<div>${x}</div>`).join("")}</div><div class="cal-grid">${cells.join("")}</div>`;
     z.querySelectorAll(".cal-cell").forEach(c => c.addEventListener("click", () => montreJourAgenda(c.dataset.jour)));
   } else {
+    const unJour = AGENDA_MODE === "jour";
     const lundi = new Date(ref); lundi.setHours(12, 0, 0, 0);
-    lundi.setDate(lundi.getDate() - ((lundi.getDay() + 6) % 7));
-    const dim = new Date(lundi); dim.setDate(dim.getDate() + 6);
-    el("agTitre").textContent = lundi.getDate() + " – " + dim.getDate() + " " + MOIS_NOMS[dim.getMonth()] + " " + dim.getFullYear();
+    if (!unJour) lundi.setDate(lundi.getDate() - ((lundi.getDay() + 6) % 7));
+    const dim = new Date(lundi); dim.setDate(dim.getDate() + (unJour ? 0 : 6));
+    el("agTitre").textContent = unJour
+      ? JOURS_COURTS[(lundi.getDay() + 6) % 7] + ". " + lundi.getDate() + " " + MOIS_NOMS[lundi.getMonth()] + " " + lundi.getFullYear()
+      : lundi.getDate() + " – " + dim.getDate() + " " + MOIS_NOMS[dim.getMonth()] + " " + dim.getFullYear();
     const H0 = 8, H1 = 23, hH = 42;
     const hauteur = (H1 - H0) * hH;
     const fondHeures = `background-image:repeating-linear-gradient(to bottom, var(--line) 0 1px, transparent 1px ${hH}px);`;
     const jours = [];
-    for (let i = 0; i < 7; i++) { const d = new Date(lundi); d.setDate(d.getDate() + i); jours.push(d); }
+    for (let i = 0; i < (unJour ? 1 : 7); i++) { const d = new Date(lundi); d.setDate(d.getDate() + i); jours.push(d); }
     const entetes = `<div></div>` + jours.map(d => {
       const j = SalesStats.ymdLocal(d);
       return `<div class="sem-jour${j === today ? " auj" : ""}">${JOURS_COURTS[(d.getDay() + 6) % 7]}<b>${d.getDate()}</b></div>`;
@@ -1351,11 +1355,38 @@ function renderAgenda() {
         ? (() => { const n = new Date(); const hDec = n.getHours() + n.getMinutes() / 60;
             return (hDec >= H0 && hDec <= H1) ? `<div class="sem-ligne" style="top:${Math.round((hDec - H0) * hH)}px"></div>` : ""; })()
         : "";
-      return `<div class="sem-col" style="height:${hauteur}px;${fondHeures}">${blocs}${ligne}</div>`;
+      return `<div class="sem-col${j === today ? " auj" : ""}" style="height:${hauteur}px;${fondHeures}">${blocs}${ligne}</div>`;
     }).join("");
-    z.innerHTML = `<div class="sem-wrap"><div class="sem-grid">${entetes}${colHeures}${cols}</div></div>`;
+    z.innerHTML = `<div class="sem-wrap"><div class="sem-grid" style="grid-template-columns:48px repeat(${jours.length},minmax(${unJour ? "260px" : "92px"},1fr));min-width:${unJour ? "320px" : "700px"}">${entetes}${colHeures}${cols}</div></div>`;
     z.querySelectorAll(".sem-ev").forEach(e2 => e2.addEventListener("click", () => montreJourAgenda(e2.dataset.jour)));
   }
+}
+function montreAjoutEvenement() {
+  if (MOI.role === "observateur") return;
+  const ov = el("callOverlay");
+  ov.innerHTML = `<div class="offre-carte" style="text-align:left">
+    <div class="offre-titre" style="font-size:19px">Ajouter un événement</div>
+    <div class="sinfo" style="margin:4px 0 12px">Un créneau perso : le dispatch ne te proposera pas de RDV à moins de 45 min, et il apparaît dans l'agenda de l'équipe.</div>
+    <div class="row2">
+      <div class="field"><label>Quoi ? (visible par l'équipe)</label><input id="evTitre" maxlength="60" placeholder="ex : indispo, perso, formation"></div>
+      <div class="field"><label>Quand ? *</label><input type="datetime-local" id="evQuand"></div>
+    </div>
+    <div class="offre-actions">
+      <button class="abtn oui" id="evCreer">Ajouter</button>
+      <button class="abtn" id="evFermer">Annuler</button>
+    </div>
+  </div>`;
+  ov.style.display = "";
+  el("evFermer").addEventListener("click", () => { ov.style.display = "none"; });
+  el("evCreer").addEventListener("click", async () => {
+    if (!el("evQuand").value) return alert("Indique la date et l'heure.");
+    try {
+      await call("rdv_perso", { quand: new Date(el("evQuand").value).toISOString(), titre: el("evTitre").value.trim() });
+      ov.style.display = "none";
+      await loadData();
+      showPage("agenda");
+    } catch (e) { alert(e.message); }
+  });
 }
 function montreJourAgenda(j) {
   const today = SalesStats.ymdLocal(new Date());
@@ -1365,14 +1396,21 @@ function montreJourAgenda(j) {
   ov.innerHTML = `<div class="offre-carte" style="text-align:left;max-height:82vh;overflow-y:auto">
     <div class="offre-titre" style="font-size:19px">${esc(jolieDate(j, today))}</div>
     ${evs.length ? evs.map(r => `
-      <div style="padding:9px 0;border-bottom:1px solid var(--line)">
-        <div class="stitre" style="margin:0;font-size:14px">${heureLocale(r.quand)} · ${esc(r.type)} · ${esc(r.prospect)}</div>
-        <div class="sinfo" style="margin:2px 0 0">${r.assigne_a ? "avec " + esc(r.assigne_a) : "personne ne l'a pris"} · setter ${esc(r.setter || "?")} · ${ETAT_RDV2[r.statut] || r.statut}${r.type === "R2" ? " · à encaisser " + eur(r.montant_attendu || 0) + (r.note_r2 ? " (" + esc(r.note_r2) + ")" : "") : ""}</div>
+      <div style="padding:9px 0;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <div>
+          <div class="stitre" style="margin:0;font-size:14px">${heureLocale(r.quand)} · ${esc(r.type)} · ${esc(r.prospect)}</div>
+          <div class="sinfo" style="margin:2px 0 0">${r.type === "Perso" ? "créneau perso de " + esc(r.assigne_a || "?") : (r.assigne_a ? "avec " + esc(r.assigne_a) : "personne ne l'a pris") + " · setter " + esc(r.setter || "?") + " · " + (ETAT_RDV2[r.statut] || r.statut)}${r.type === "R2" ? " · à encaisser " + eur(r.montant_attendu || 0) + (r.note_r2 ? " (" + esc(r.note_r2) + ")" : "") : ""}</div>
+        </div>
+        ${r.type === "Perso" && r.statut !== "annule" && (MOI.role === "admin" || r.setter === MOI.nom) ? `<button class="abtn non" data-evsuppr="${r.id}">Retirer</button>` : ""}
       </div>`).join("") : `<div class="sinfo">Rien ce jour-là.</div>`}
     <div class="offre-actions" style="margin-top:14px"><button class="abtn" id="agJourFermer">Fermer</button></div>
   </div>`;
   ov.style.display = "";
   el("agJourFermer").addEventListener("click", () => { ov.style.display = "none"; });
+  ov.querySelectorAll("[data-evsuppr]").forEach(b => b.addEventListener("click", async () => {
+    try { await call("rdv_annule", { id: b.dataset.evsuppr }); ov.style.display = "none"; await loadData(); }
+    catch (e) { alert(e.message); }
+  }));
 }
 
 // ----- Fiche prospect : tout l'historique avant de rappeler -----
@@ -2009,14 +2047,15 @@ async function init() {
   const bougeAgenda = sens => {
     const d = new Date(AGENDA_REF);
     if (AGENDA_MODE === "mois") d.setMonth(d.getMonth() + sens, 15);
-    else d.setDate(d.getDate() + 7 * sens);
+    else d.setDate(d.getDate() + (AGENDA_MODE === "jour" ? 1 : 7) * sens);
     AGENDA_REF = d.getTime();
     renderAgenda();
   };
   el("agPrec").addEventListener("click", () => bougeAgenda(-1));
   el("agSuiv").addEventListener("click", () => bougeAgenda(1));
   el("agAuj").addEventListener("click", () => { AGENDA_REF = Date.now(); renderAgenda(); });
-  el("agMode").addEventListener("change", () => { AGENDA_MODE = el("agMode").value; renderAgenda(); });
+  document.querySelectorAll(".agseg button").forEach(b => b.addEventListener("click", () => { AGENDA_MODE = b.dataset.agmode; renderAgenda(); }));
+  el("agAjout").addEventListener("click", montreAjoutEvenement);
   el("planType").addEventListener("change", () => { PLANTYPE = el("planType").value; render(); });
   el("planQui").addEventListener("change", () => { PLANFILTRE = el("planQui").value; render(); });
   let chercheT = null;
