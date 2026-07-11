@@ -239,9 +239,14 @@ function renderPlanning(today) {
           <option value="">Réassigner à…</option>
           ${EQUIPE.filter(m => m.equipe === r.equipe && roleMatchFront(r.type, m.role_vente)).map(m => `<option>${esc(m.nom)}</option>`).join("")}
         </select>`;
+  const zone = (titre, coul, n, inner) => `
+    <div class="pzone">
+      <h3><span class="kdot" style="background:${coul}"></span>${titre}<span class="knb">${n}</span></h3>
+      ${inner}
+    </div>`;
   let html = "";
   if (pourMoi.length) {
-    html += `<h2>À prendre — c'est pour toi</h2>` + pourMoi.map(r => `
+    html += zone("À prendre — c'est pour toi", "var(--accent)", pourMoi.length, pourMoi.map(r => `
       <div class="slot" ${r.offre_niveau >= 3 ? 'style="border-color:#7f1d1d"' : ""}>
         <div class="stitre">${chipEquipe(r.equipe)}${esc(r.type)} · ${quandJoli(r.quand, today)}${r.offre_niveau >= 3 ? ' · <span class="late">SANS PRENEUR</span>' : ""}</div>
         <div class="sinfo">${slotInfo(r)}</div>
@@ -256,10 +261,10 @@ function renderPlanning(today) {
           <input type="datetime-local" id="dech-${r.id}">
           <button class="abtn oui" data-act="rdv_propose" data-id="${r.id}">Envoyer la proposition</button>
         </div>
-      </div>`).join("");
+      </div>`).join(""));
   }
   if (propositions.length) {
-    html += `<h2>Propositions de décalage à valider (vérifie avec le prospect)</h2>` + propositions.map(r => `
+    html += zone("Propositions de décalage à valider (vérifie avec le prospect)", "#60a5fa", propositions.length, propositions.map(r => `
       <div class="slot">
         <div class="stitre">${esc(r.type)} · ${esc(r.prospect)}</div>
         <div class="sinfo">${esc(r.proposition_par)} propose ${quandJoli(r.proposition, today)} au lieu de ${quandJoli(r.quand, today)}</div>
@@ -267,7 +272,7 @@ function renderPlanning(today) {
           <button class="abtn oui" data-act="prop-oui" data-id="${r.id}">Le prospect est ok</button>
           <button class="abtn non" data-act="prop-non" data-id="${r.id}">Refuser (repart à l'équipe)</button>
         </div>
-      </div>`).join("");
+      </div>`).join(""));
   }
   const mesConfirmes = actifs.filter(r => r.statut === "confirme" && r.type !== "Perso" && (admin || r.assigne_a === moi || r.setter === moi))
     .sort((a, c) => a.quand.localeCompare(c.quand));
@@ -292,7 +297,7 @@ function renderPlanning(today) {
     `<div class="sinfo" style="color:var(--accent)">À encaisser : ${eur(r.montant_attendu || 0)}${r.note_r2 ? " · " + esc(r.note_r2) : ""}</div>`;
   const enRetard = mesConfirmes.filter(r => r.quand < seuilRetard);
   if (aLogger.length) {
-    html += `<h2>À logger — l'appel est passé (ou c'est aujourd'hui)</h2>` + aLogger.map(r => `
+    html += zone("À logger — l'appel est passé (ou c'est aujourd'hui)", "#fbbf24", aLogger.length, aLogger.map(r => `
       <div class="slot">
         <div class="stitre">${chipEquipe(r.equipe)}${esc(r.type)} · ${quandJoli(r.quand, today)} · ${esc(r.prospect)}</div>
         <div class="sinfo">${slotInfo(r)} · pris par ${esc(r.assigne_a)}</div>
@@ -308,10 +313,10 @@ function renderPlanning(today) {
           ${outilsSetter(r)}
         </div>
         ${deplaceHTML(r)}
-      </div>`).join("");
+      </div>`).join(""));
   }
   if (aVenir.length) {
-    html += `<h2>À venir — confirmés</h2>` + aVenir.map(r => `
+    html += zone("À venir — confirmés", "#34d399", aVenir.length, aVenir.map(r => `
       <div class="slot">
         <div class="stitre">${chipEquipe(r.equipe)}${esc(r.type)} · ${quandJoli(r.quand, today)} · ${esc(r.prospect)}</div>
         <div class="sinfo">${slotInfo(r)} · pris par ${esc(r.assigne_a)}</div>
@@ -324,25 +329,26 @@ function renderPlanning(today) {
           ${outilsSetter(r)}
         </div>
         ${deplaceHTML(r)}
-      </div>`).join("");
+      </div>`).join(""));
   }
   if (enAttente.length) {
-    html += `<h2>En cours d'attribution</h2>` + enAttente.map(r => `
+    html += zone("En cours d'attribution", "#948da6", enAttente.length, enAttente.map(r => `
       <div class="slot ${r.offre_niveau >= 3 ? "" : "grise"}" ${r.offre_niveau >= 3 ? 'style="border-color:#7f1d1d"' : ""}>
         <div class="stitre">${chipEquipe(r.equipe)}${esc(r.type)} · ${quandJoli(r.quand, today)}${r.offre_niveau >= 3 ? ' · <span class="late">SANS PRENEUR</span>' : ""}</div>
         <div class="sinfo">${slotInfo(r)}</div>
         <div class="setat">${etatTexte(r)}</div>
         <div class="abtns">${reassignHTML(r)}${outilsSetter(r)}</div>
-      </div>`).join("");
+      </div>`).join(""));
   }
   if (enRetard.length) {
-    html += `<details class="retard"><summary>En retard — à régulariser (${enRetard.length})</summary>` +
+    html += zone("En retard — à régulariser", "#f87171", enRetard.length,
+      `<details class="retard"><summary>Déplier pour régulariser</summary>` +
       enRetard.map(r => `
       <div class="slot grise">
         <div class="stitre">${chipEquipe(r.equipe)}${esc(r.type)} · ${quandJoli(r.quand, today)} · ${esc(r.prospect)}</div>
         <div class="sinfo">${slotInfo(r)} · pris par ${esc(r.assigne_a)} — résultat jamais loggé</div>
         <div class="abtns">${quickresHTML(r)} ${outilsSetter(r)}</div>
-      </div>`).join("") + `</details>`;
+      </div>`).join("") + `</details>`);
   }
   el("aprendre").innerHTML = html || `<div class="empty">${PLANTYPE !== "tous" || PLANFILTRE === "moi" ? "Rien dans ce filtre." : "Rien pour l'instant. Les settings calés et les RDV de vente arrivent ici."}</div>`;
   el("propositions").innerHTML = "";
@@ -353,7 +359,7 @@ function renderPlanning(today) {
   const parJour = {};
   liste.forEach(r => { const j = jourLocal(r.quand); (parJour[j] = parJour[j] || []).push(r); });
   el("planning").innerHTML = Object.keys(parJour).length
-    ? Object.keys(parJour).sort().map(j =>
+    ? `<div class="pzone">` + Object.keys(parJour).sort().map(j =>
         `<div class="jour">${jolieDate(j, today)}</div>` +
         parJour[j].map(r => `
           <div class="pl ${r.statut === "confirme" ? "" : "grise"}">
@@ -362,7 +368,7 @@ function renderPlanning(today) {
             <span>${esc(r.prospect)}</span>
             <span class="pill">${r.assigne_a ? esc(r.assigne_a) : "?"}</span>
             <span class="conf ${r.statut === "confirme" ? "today" : ""}" style="font-size:12px">${r.statut === "confirme" ? "confirmé" : "en attente"}</span>
-          </div>`).join("")).join("")
+          </div>`).join("")).join("") + `</div>`
     : `<div class="empty">Aucun RDV à venir${PLANFILTRE === "moi" || PLANTYPE !== "tous" ? " dans ce filtre" : ""}.</div>`;
 
   inlinesOuverts.forEach(id => { const d = el(id); if (d) d.style.display = "flex"; });
