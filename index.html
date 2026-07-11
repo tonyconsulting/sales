@@ -83,6 +83,12 @@
   .sem-ev.lane2 { left:50%; width:47%; }
   .sem-ligne { position:absolute; left:0; right:0; height:2px; background:#f87171; z-index:2; }
   .sem-ligne::before { content:""; position:absolute; left:-4px; top:-3px; width:8px; height:8px; border-radius:50%; background:#f87171; }
+  .agnav { background:none; border:none; color:var(--ink); font-size:19px; padding:4px 8px; cursor:pointer; border-radius:8px; }
+  .agnav:hover { background:rgba(167,139,250,.12); }
+  .agseg { display:flex; }
+  .cal-chip.perso, .sem-ev.perso { background:rgba(148,141,166,.08); border-color:var(--line); color:var(--muted); }
+  .sem-jour.auj { background:rgba(167,139,250,.10); }
+  .sem-col.auj { background:rgba(167,139,250,.05); }
   @media (max-width:700px) { .cal-cell { min-height:66px; padding:4px 3px; } .cal-chip .qui { display:none; } }
   @media (max-width:560px) { #rappelsZone .row2 { grid-template-columns:1fr; } }
   .status { display:flex; align-items:center; gap:7px; color:var(--muted); font-size:12.5px; margin:12px 0 22px; }
@@ -563,13 +569,21 @@
     <section class="page" id="page-agenda">
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px">
         <button class="abtn" id="agAuj">Aujourd'hui</button>
-        <button class="abtn" id="agPrec" style="padding:9px 14px">&#8249;</button>
-        <button class="abtn" id="agSuiv" style="padding:9px 14px">&#8250;</button>
-        <div class="fsel"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 11h18"/></svg><select id="agMode"><option value="mois">Mois</option><option value="semaine">Semaine</option></select></div>
-        <div class="stitre" id="agTitre" style="margin:0 0 0 auto;font-size:16.5px"></div>
+        <div class="fsel" style="gap:2px;padding:0 6px">
+          <button class="agnav" id="agPrec">&#8249;</button>
+          <span id="agTitre" style="font-size:13.5px;font-weight:600;padding:0 8px;white-space:nowrap"></span>
+          <button class="agnav" id="agSuiv">&#8250;</button>
+        </div>
+        <div class="controls agseg" style="margin:0">
+          <button data-agmode="jour">Jour</button>
+          <button data-agmode="semaine">Semaine</button>
+          <button data-agmode="mois" class="active">Mois</button>
+        </div>
+        <span style="flex:1"></span>
+        <button class="abtn oui" id="agAjout">+ Ajouter un événement</button>
       </div>
       <div id="agenda"></div>
-      <div class="sinfo" style="margin-top:10px;color:var(--muted)">Pointillés = en cours d'attribution · orange = R2 encaissement · un jour se tape pour le détail.</div>
+      <div class="sinfo" style="margin-top:10px;color:var(--muted)">Violet = vente · gris = setting · orange = R2 · foncé = créneau perso · pointillés = en attribution. Un jour se tape pour le détail. « Ajouter un événement » bloque un créneau perso : le dispatch ne te proposera rien dessus.</div>
     </section>
     <section class="page" id="page-appels">
       <div class="tscroll" id="appels"></div>
@@ -600,7 +614,7 @@
   </main>
 </div>
 
-<script src="stats.js?v=24"></script>
-<script src="app.js?v=24"></script>
+<script src="stats.js?v=25"></script>
+<script src="app.js?v=25"></script>
 </body>
 </html>
