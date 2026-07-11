@@ -1317,7 +1317,7 @@ function renderAgenda() {
       cells.push(`<div class="cal-cell${d.getMonth() !== ref.getMonth() ? " hors" : ""}${j === today ? " auj" : ""}" data-jour="${j}">
         <div class="cal-num">${d.getDate()}</div>${chips}${evs.length > 3 ? `<span class="cal-plus">+ ${evs.length - 3} autres</span>` : ""}</div>`);
     }
-    z.innerHTML = `<div class="cal-head">${JOURS_COURTS.map(x => `<div>${x}</div>`).join("")}</div><div class="cal-grid">${cells.join("")}</div>`;
+    z.innerHTML = `<div class="cal-wrap"><div class="cal-head">${JOURS_COURTS.map(x => `<div>${x}.</div>`).join("")}</div><div class="cal-grid">${cells.join("")}</div></div>`;
     z.querySelectorAll(".cal-cell").forEach(c => c.addEventListener("click", () => montreJourAgenda(c.dataset.jour)));
   } else {
     const unJour = AGENDA_MODE === "jour";
@@ -1334,7 +1334,7 @@ function renderAgenda() {
     for (let i = 0; i < (unJour ? 1 : 7); i++) { const d = new Date(lundi); d.setDate(d.getDate() + i); jours.push(d); }
     const entetes = `<div></div>` + jours.map(d => {
       const j = SalesStats.ymdLocal(d);
-      return `<div class="sem-jour${j === today ? " auj" : ""}">${JOURS_COURTS[(d.getDay() + 6) % 7]}<b>${d.getDate()}</b></div>`;
+      return `<div class="sem-jour${j === today ? " auj" : ""}">${JOURS_COURTS[(d.getDay() + 6) % 7]}.<b>${d.getDate()}</b></div>`;
     }).join("");
     const colHeures = `<div class="sem-heures" style="height:${hauteur}px;position:relative">` +
       Array.from({ length: H1 - H0 }, (_, i) => `<div style="position:absolute;top:${i * hH - 6}px;right:6px">${H0 + i}:00</div>`).join("") + `</div>`;
