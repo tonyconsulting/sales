@@ -36,7 +36,7 @@ const PAGES = {
   appels: ["Appels", "Les 100 derniers calls loggés"],
   relances: ["Relances", "Les follow-ups à faire"],
   kpi: ["KPI", "Analysez vos perfs"],
-  reglages: ["Réglages", "Rappels automatiques avant les RDV"]
+  reglages: ["Réglages", "Rappels automatiques et messages de relance"]
 };
 const ETAT_PILL = { "Closé": "", "À relancer": "amber", "RDV de vente": "", "Vu en setting": "grey", "Setting calé": "grey", "Perdu": "red", "Contacté": "grey" };
 // Messages de relance prêts à coller (DM Instagram), par catégorie
@@ -49,9 +49,13 @@ const MSG_RELANCE = {
   "Pas intéressé": "Coucou {prenom} ! On s'était parlé {date}, je voulais prendre de tes nouvelles. Si les choses ont bougé de ton côté, je suis là.",
   defaut: "Coucou {prenom} ! Je reviens vers toi suite à notre dernier échange. Dis-moi quand tu es dispo pour qu'on s'appelle."
 };
-const msgRelance = r => (MSG_RELANCE[r.categorie] || MSG_RELANCE.defaut)
+let MSG_SRV = {}; // textes modifiés par Tony dans Réglages (config serveur)
+const msgRelance = r => (MSG_SRV[r.categorie] || MSG_RELANCE[r.categorie] || MSG_SRV.defaut || MSG_RELANCE.defaut)
   .replace("{prenom}", (r.prospect || "").trim().split(/\s+/)[0] || "")
   .replace("{date}", r.echange ? jolieDate(r.echange, SalesStats.ymdLocal(new Date())) : "récemment");
+
+const CATS_MSG = ["No-show", "Pas intéressé", "Pas le budget", "Réfléchit", "À rappeler", "À relancer", "defaut"];
+const CAT_LABEL = { defaut: "Autres cas (Non qualifié, Autre...)" };
 
 // Options des menus « Résultat… » rapides (prospects + retards)
 const RES_Q_SETTING = ["No-show", "Non abouti", "RDV de vente calé"];
@@ -818,7 +822,15 @@ async function chargeRappels() {
         <div class="field"><label>Message (300 caractères max)</label><textarea class="rg-msg" maxlength="300">${esc(g.message)}</textarea></div>
         <div class="abtns"><button class="abtn oui rg-save">Enregistrer</button><button class="abtn non rg-del">Supprimer</button></div>
       </div>`).join("") +
-      `<div class="abtns" style="margin-top:6px"><button class="abtn" id="rgAjout">Ajouter un rappel</button></div>`;
+      `<div class="abtns" style="margin-top:6px"><button class="abtn" id="rgAjout">Ajouter un rappel</button></div>` +
+      `<h2 style="margin-top:34px">Messages de relance (bouton « Copier le message »)</h2>
+      <div class="sinfo" style="margin-bottom:14px;color:var(--muted)">Un texte par catégorie, copié tel quel par l'équipe. Balises : {prenom} = prénom du prospect, {date} = date du dernier échange.</div>` +
+      CATS_MSG.map(cat => `
+      <div class="slot" data-cat="${esc(cat)}">
+        <div class="stitre">${esc(CAT_LABEL[cat] || cat)}</div>
+        <div class="field"><textarea class="msg-txt" maxlength="500">${esc(MSG_SRV[cat] || MSG_RELANCE[cat] || MSG_RELANCE.defaut)}</textarea></div>
+        <div class="abtns"><button class="abtn oui msg-save">Enregistrer</button></div>
+      </div>`).join("");
     z.querySelectorAll(".rg-save").forEach(b => b.addEventListener("click", async () => {
       if (b.disabled) return;
       const sl = b.closest(".slot");
@@ -846,6 +858,20 @@ async function chargeRappels() {
       if (!confirm("Supprimer ce rappel ? Plus aucune notification de ce type ne partira.")) return;
       try { await call("rappels_delete", { id: b.closest(".slot").dataset.rid }); chargeRappels(); }
       catch (e) { alert(e.message); }
+    }));
+    z.querySelectorAll(".msg-save").forEach(b => b.addEventListener("click", async () => {
+      if (b.disabled) return;
+      const sl = b.closest(".slot");
+      const msg = sl.querySelector(".msg-txt").value.trim().slice(0, 500);
+      if (!msg) return alert("Le message ne peut pas être vide.");
+      b.disabled = true;
+      b.textContent = "Enregistrement…";
+      try {
+        await call("messages_save", { categorie: sl.dataset.cat, message: msg });
+        MSG_SRV[sl.dataset.cat] = msg;
+        b.textContent = "Enregistré";
+        setTimeout(() => { b.textContent = "Enregistrer"; b.disabled = false; }, 1500);
+      } catch (e) { alert(e.message); b.textContent = "Enregistrer"; b.disabled = false; }
     }));
     el("rgAjout").addEventListener("click", async (ev) => {
       const b = ev.currentTarget;
@@ -989,6 +1015,7 @@ async function init() {
   try {
     const cfg = await call("config");
     MOI = cfg.moi; EQUIPE = cfg.equipe || [];
+    MSG_SRV = cfg.messages || {};
   } catch (e) {
     brancheLock();
     el("lockMsg").textContent = e.message === "code invalide"
