@@ -184,6 +184,23 @@
   /* Barre du haut mobile + tiroir latéral (façon CloseOS) */
   .topbar { display:none; }
   .overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:50; }
+  .overlay-plein { position:fixed; inset:0; background:rgba(6,4,12,0.92); z-index:90; overflow-y:auto;
+    padding:calc(24px + env(safe-area-inset-top)) 18px 32px; }
+  .offre-carte { max-width:480px; margin:4vh auto 0; background:var(--cardbg); border:1px solid var(--line); border-radius:18px; padding:24px; }
+  .offre-type { color:var(--accent); font-size:12.5px; font-weight:700; text-transform:uppercase; letter-spacing:0.08em; margin-bottom:6px; }
+  .offre-titre { font-size:24px; font-weight:750; letter-spacing:-0.02em; margin-bottom:4px; }
+  .offre-quand { font-size:16px; color:var(--ink); margin-bottom:14px; }
+  .offre-infos { color:var(--muted); font-size:13.5px; line-height:1.7; margin-bottom:16px; }
+  .offre-chrono { height:8px; border-radius:99px; background:#1e1930; overflow:hidden; margin-bottom:6px; }
+  .offre-chrono i { display:block; height:100%; background:var(--accent); border-radius:99px; transition:width 0.5s linear; }
+  .offre-chrono.rouge i { background:var(--bad); }
+  .offre-compte { color:var(--muted); font-size:12.5px; margin-bottom:18px; font-variant-numeric:tabular-nums; }
+  .offre-actions { display:flex; flex-direction:column; gap:10px; }
+  .offre-actions .abtn { padding:14px; font-size:15.5px; text-align:center; }
+  .offre-plus-tard { text-align:center; color:var(--muted); font-size:13px; margin-top:14px; cursor:pointer; text-decoration:underline; }
+  .bandeau-retard { background:#2a1214; border:1px solid #7f1d1d; border-radius:12px; padding:12px 16px; margin-bottom:14px; font-size:13.5px; display:flex; gap:14px; flex-wrap:wrap; }
+  .bandeau-retard span { cursor:pointer; color:var(--bad); font-weight:600; }
+  .rot { color:var(--bad); font-size:11px; }
   .overlay.on { display:block; }
   .aside-close { display:none; }
   .nlab { display:flex; align-items:center; gap:11px; min-width:0; }
@@ -223,6 +240,10 @@
     <button id="btnCodeLock" class="submit" style="margin-top:10px">Entrer</button>
   </div>
 </div>
+
+<div class="overlay-plein" id="offreOverlay" style="display:none"></div>
+<div class="overlay-plein" id="fileOverlay" style="display:none"></div>
+<div class="overlay-plein" id="scriptOverlay" style="display:none"></div>
 
 <div class="app" id="app" style="display:none">
   <div class="topbar">
@@ -293,6 +314,7 @@
 
     <section class="page" id="page-log">
       <div class="toast" id="toast">Call enregistré.</div>
+      <div style="margin-bottom:12px"><button class="abtn" id="btnScript" type="button">Voir le script</button></div>
       <form class="form" id="logForm" autocomplete="off">
         <div class="types" id="typeBtns" style="grid-template-columns:repeat(2,1fr)">
           <button type="button" data-t="Setting" class="active">Setting</button>
@@ -362,6 +384,14 @@
             <div class="field" id="fVenteMoi"><label>Qui fera l'appel de vente ?</label>
               <select id="inVenteMoi"><option value="">Dispatch à l'équipe (par défaut)</option><option value="moi">Moi-même</option></select>
             </div>
+            <div class="row2">
+              <div class="field"><label>Budget évoqué</label>
+                <select id="inQualifBudget"><option selected>Non demandé</option><option>Moins de 1 000 €</option><option>1 000-3 000 €</option><option>3 000 € et plus</option></select></div>
+              <div class="field"><label>Urgence</label>
+                <select id="inQualifUrgence"><option selected>Non demandé</option><option>Veut démarrer vite</option><option>Sous 1 mois</option><option>Pas pressé</option></select></div>
+            </div>
+            <div class="field"><label>Objection pressentie</label>
+              <select id="inQualifObjection"><option selected>Aucune</option><option>Argent</option><option>Timing</option><option>Conjoint ou associé</option><option>Confiance</option></select></div>
             <div class="field"><label>Fiche prospect (objectif, budget, objection probable)</label><textarea id="inFiche"></textarea></div>
           </div>
         </div>
@@ -379,6 +409,9 @@
               <div class="field"><label>Offre</label><select id="inOffreV"><option value=""></option><option>Accompagnement</option><option>Autre</option></select></div>
               <div class="field"><label>Montant de la vente (€) *</label><input type="number" id="inMontantV" min="0" step="1"></div>
             </div>
+          </div>
+          <div class="field" id="fObjection" style="display:none"><label>Objection principale de l'appel</label>
+            <select id="inObjection"><option selected>Aucune</option><option>Argent</option><option>Logistique ou timing</option><option>Conjoint ou associé</option><option>Peur ou confiance</option><option>Écran de fumée</option></select>
           </div>
           <div id="causeVBlock" style="display:none">
             <div class="field"><label>Cause *</label>
@@ -423,6 +456,7 @@
     </section>
 
     <section class="page" id="page-dashboard">
+      <div id="bandeauRetard" style="display:none"></div>
       <div class="grid3">
         <div class="card kpi">
           <div class="itile"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 11h18"/></svg></div>
@@ -445,6 +479,16 @@
     </section>
 
     <section class="page" id="page-pipeline">
+      <div class="controls" style="margin-bottom:14px">
+        <label class="fsel">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h18l-7 8v6l-4 2v-8L3 4Z"/></svg>
+          <select id="pipeFiltre">
+            <option value="tous" selected>Tous les prospects</option>
+            <option value="orphelins">Sans prochaine action</option>
+            <option value="sommeil">Sans contact depuis trop longtemps</option>
+          </select>
+        </label>
+      </div>
       <div id="pipe"></div>
       <h2>Prospects par état</h2>
       <div class="kanban" id="kanban"></div>
@@ -464,7 +508,10 @@
       <div id="planning"></div>
     </section>
     <section class="page" id="page-appels"><div class="tscroll" id="appels"></div></section>
-    <section class="page" id="page-relances"><div class="tscroll" id="relances"></div></section>
+    <section class="page" id="page-relances">
+      <div class="controls" style="margin-bottom:14px"><button class="abtn oui" id="fileDemarrer" style="display:none">Démarrer la file</button></div>
+      <div class="tscroll" id="relances"></div>
+    </section>
 
     <section class="page" id="page-reglages"><div id="rappelsZone"></div></section>
 
@@ -472,6 +519,10 @@
       <div class="charts" id="charts"></div>
       <h2>Par personne (période sélectionnée)</h2>
       <div class="tscroll" id="people"></div>
+      <h2>Objections principales (période)</h2>
+      <div class="tscroll" id="objections"></div>
+      <h2>Dispatch — vitesse de prise des RDV</h2>
+      <div class="tscroll" id="dispatch"></div>
     </section>
 
     <div class="foot">
@@ -480,7 +531,7 @@
   </main>
 </div>
 
-<script src="stats.js?v=16"></script>
-<script src="app.js?v=16"></script>
+<script src="stats.js?v=17"></script>
+<script src="app.js?v=17"></script>
 </body>
 </html>
