@@ -572,15 +572,23 @@ function render() {
   let prospectsPipe = s.prospects;
   if (filtrePipe === "orphelins") prospectsPipe = s.prospects.filter(estOrphelin);
   if (filtrePipe === "sommeil") prospectsPipe = s.prospects.filter(x => x.sommeil);
+  const KDOT = { "Setting calé": "#948da6", "Vu en setting": "#60a5fa", "RDV de vente": "#a78bfa", "À relancer": "#fbbf24", "Closé": "#34d399", "Perdu": "#f87171" };
   el("kanban").innerHTML = prospectsPipe.length
     ? ORDRE.map(etat => {
         const list = prospectsPipe.filter(x => x.etat === etat);
+        const totalEur = etat === "Closé" ? list.reduce((t2, x) => t2 + (x.vendu || 0), 0)
+          : etat === "À relancer" ? list.reduce((t2, x) => t2 + (x.relanceEur || 0), 0) : null;
         const cards = list.slice(0, 20).map(x =>
           `<div class="kcard fiche-tap" data-cle="${esc(x.cle || "")}" ${x.sommeil ? 'style="border-left:3px solid var(--bad);cursor:pointer"' : 'style="cursor:pointer"'}><div class="kn">${esc(x.nom || x.contact || "?")}</div><div class="kc">${esc(x.contact)}</div>` +
           (x.sommeil ? `<div class="rot">${x.joursSans} j sans contact</div>` : "") +
           (etat === "Closé" && x.vendu ? `<div class="ke">${eur(x.vendu)}${x.vendu > x.encaisse ? " (reste " + eur(x.vendu - x.encaisse) + ")" : ""}</div>` : "") +
           (etat === "À relancer" && x.relanceEur ? `<div class="ke">${eur(x.relanceEur)}</div>` : "") + `</div>`).join("");
-        return `<div class="kol"><h3>${etat} <span>${list.length}</span></h3>${cards}${list.length > 20 ? `<div class="kmore">+ ${list.length - 20} autres</div>` : ""}</div>`;
+        return `<div class="kol">
+          <h3><span class="kdot" style="background:${KDOT[etat] || "var(--muted)"}"></span>${etat}<span class="knb">${list.length}</span></h3>
+          <div class="keur">${totalEur !== null ? eur(totalEur) : "&nbsp;"}</div>
+          ${list.length ? cards : `<div class="kvide">Vide</div>`}
+          ${list.length > 20 ? `<div class="kmore">+ ${list.length - 20} autres</div>` : ""}
+        </div>`;
       }).join("")
     : `<div class="empty">${filtrePipe === "tous" ? "Aucun prospect identifié." : "Rien dans ce filtre. Bon signe."}</div>`;
   document.querySelectorAll(".fiche-tap").forEach(k => k.addEventListener("click", () => montreFiche(k.dataset.cle)));
