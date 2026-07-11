@@ -1068,7 +1068,7 @@ async function init() {
   el("urole").textContent = MOI.role === "admin" ? "Head of sales" : MOI.role === "observateur" ? "Observateur" : (MOI.role_vente || "membre");
   if (MOI.role === "observateur") {
     document.querySelector('#nav button[data-page="log"]').style.display = "none";
-    el("vueEquipe").style.display = "";
+    el("fVueEquipe").style.display = "";
     el("vueEquipe").addEventListener("change", () => { VUEQUIPE = el("vueEquipe").value; render(); });
   }
   el("burger").addEventListener("click", () => { el("sideNav").classList.add("open"); el("navOverlay").classList.add("on"); });
@@ -1083,7 +1083,7 @@ async function init() {
     el("navReglages").style.display = "";
     el("fQuiAdmin").style.display = "";
     el("inQui").innerHTML = EQUIPE.map(m => `<option${m.nom === MOI.nom ? " selected" : ""}>${esc(m.nom)}</option>`).join("");
-    el("vueEquipe").style.display = "";
+    el("fVueEquipe").style.display = "";
     el("vueEquipe").addEventListener("change", () => { VUEQUIPE = el("vueEquipe").value; render(); });
     el("inQui").addEventListener("change", majEquipeForm);
     el("inQuiClose").addEventListener("change", majEquipeForm);
