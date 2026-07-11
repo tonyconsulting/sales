@@ -17,7 +17,11 @@ const chipEquipe = e => (voitTout() && e) ? `<span class="pill ${e === "mila" ? 
 
 const el = id => document.getElementById(id);
 const maintenantServeur = () => Date.now() + SERVER_OFFSET;
-const formatDelaiPrise = s => s <= 240 ? (s < 120 ? "pris en " + s + " s" : "pris en " + Math.round(s / 60) + " min") : "pris avec " + Math.round((s - 240) / 60) + " min de retard";
+const formatDelaiPrise = s => {
+  if (s <= 240) return s < 120 ? "pris en " + s + " s" : "pris en " + Math.round(s / 60) + " min";
+  const m = Math.max(1, Math.round((s - 240) / 60));
+  return m < 60 ? "pris avec " + m + " min de retard" : m < 1440 ? "pris avec " + Math.round(m / 60) + " h de retard" : "pris avec " + Math.round(m / 1440) + " j de retard";
+};
 const eur = n => (Number(n) || 0).toLocaleString("fr-FR") + " €";
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const fmtPct = v => v === null || v === undefined ? "–" : v + " %";
@@ -49,6 +53,7 @@ const MSG_RELANCE = {
   "À rappeler": "Coucou {prenom} ! Comme convenu je reviens vers toi suite à notre échange. C'est toujours ok pour qu'on s'appelle ?",
   "À relancer": "Coucou {prenom} ! Comme convenu on se recontacte suite à notre appel. Toujours partant ? Dis-moi tes dispos.",
   "Pas intéressé": "Coucou {prenom} ! On s'était parlé {date}, je voulais prendre de tes nouvelles. Si les choses ont bougé de ton côté, je suis là.",
+  confirmation: "Coucou {prenom} ! On se retrouve {date} pour notre appel. Tu me confirmes que c'est toujours bon pour toi ?",
   defaut: "Coucou {prenom} ! Je reviens vers toi suite à notre dernier échange. Dis-moi quand tu es dispo pour qu'on s'appelle."
 };
 let MSG_SRV = {}; // textes modifiés par Tony dans Réglages (config serveur)
@@ -57,8 +62,8 @@ const msgRelance = r => (MSG_SRV[r.categorie] || MSG_RELANCE[r.categorie] || MSG
   .replace("{prenom}", (r.prospect || "").trim().split(/\s+/)[0] || "")
   .replace("{date}", r.echange ? jolieDate(r.echange, SalesStats.ymdLocal(new Date())) : "récemment");
 
-const CATS_MSG = ["No-show", "Pas intéressé", "Pas le budget", "Réfléchit", "À rappeler", "À relancer", "defaut"];
-const CAT_LABEL = { defaut: "Autres cas (Non qualifié, Autre...)" };
+const CATS_MSG = ["No-show", "Pas intéressé", "Pas le budget", "Réfléchit", "À rappeler", "À relancer", "confirmation", "defaut"];
+const CAT_LABEL = { confirmation: "Confirmation de RDV (bouton du planning)", defaut: "Autres cas (Non qualifié, Autre...)" };
 // Pilules de réglage (même style que la barre de filtres)
 const IC_REG = {
   qui: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c0-3.5 3-5.5 7-5.5s7 2 7 5.5"/></svg>',
@@ -71,9 +76,12 @@ const pilule = (icone, contenu) => `<div class="fsel fsel-b">${icone}${contenu}<
 
 // Catalogue des notifications d'événements (textes modifiables dans Réglages)
 const NOTIFS_CATALOGUE = [
-  { cle: "vente_propose", label: "RDV proposé au closer de référence", balises: "{prospect} {quand} {setter}", defaut: ["RDV de vente à prendre", "{prospect}, {quand} (setter : {setter}). Ouvre le planning pour accepter."] },
-  { cle: "vente_ouverte", label: "RDV ouvert à toute l'équipe", balises: "{prospect} {quand} {setter}", defaut: ["RDV de vente ouvert à l'équipe", "{prospect}, {quand} (setter : {setter}). Premier qui accepte le prend."] },
-  { cle: "rdv_pris", label: "RDV pris (envoyée au setter)", balises: "{qui} {prospect} {quand}", defaut: ["RDV pris", "{qui} a pris {prospect}, {quand}."] },
+  { cle: "vente_propose", label: "RDV proposé au closer de référence", balises: "{prospect} {quand} {setter}", defaut: ["RDV de vente — 2 min pour le prendre", "{prospect}, {quand} (setter : {setter}). Ouvre la notif et accepte."] },
+  { cle: "vente_ouverte", label: "RDV ouvert à toute l'équipe", balises: "{prospect} {quand} {setter}", defaut: ["RDV ouvert — premier qui accepte", "{prospect}, {quand} (setter : {setter}). 2 minutes pour le prendre."] },
+  { cle: "offre_reping", label: "Rappel 30 s avant l'ouverture (au closer proposé)", balises: "{prospect} {quand}", defaut: ["Plus que 30 secondes", "{prospect}, {quand} — après, le RDV part à toute l'équipe."] },
+  { cle: "rdv_orphelin", label: "RDV sans preneur (aux admins)", balises: "{prospect} {quand}", defaut: ["RDV sans preneur", "{prospect}, {quand}. Réassigne-le depuis ton dashboard."] },
+  { cle: "confirme_veille", label: "Veille 18 h — RDV à confirmer (au setter)", balises: "{prospect} {quand}", defaut: ["À confirmer pour demain", "{prospect}, {quand}. Envoie-lui le message de confirmation."] },
+  { cle: "rdv_pris", label: "RDV pris (envoyée au setter)", balises: "{qui} {prospect} {quand} {delai}", defaut: ["RDV pris", "{qui} a pris {prospect}, {quand} {delai}."] },
   { cle: "proposition", label: "Proposition d'horaire (au setter)", balises: "{qui} {nouveau} {prospect} {quand}", defaut: ["Proposition d'horaire à valider", "{qui} propose {nouveau} pour {prospect} (au lieu de {quand})."] },
   { cle: "horaire_confirme", label: "Horaire confirmé (à celui qui a proposé)", balises: "{prospect} {quand}", defaut: ["Horaire confirmé", "{prospect} est confirmé {quand}."] },
   { cle: "vente_closee", label: "Vente closée (à toi)", balises: "{montant}", defaut: ["Order !", "{montant}, 1 vente by K.NE"] }
@@ -153,7 +161,7 @@ function renderPlanning(today) {
 
   const pourMoi = nonConfirmes.filter(r =>
     (r.statut === "propose" && r.assigne_a === moi) ||
-    (r.statut === "ouvert" && roleMatchFront(r.type, MOI.role_vente) && !(r.refusee_par || []).includes(moi)));
+    (r.statut === "ouvert" && roleMatchFront(r.type, MOI.role_vente) && !(r.refusee_par || []).includes(moi) && r.setter !== moi));
   const propositions = actifs.filter(r => r.statut === "decale" && (admin || r.setter === moi));
   const enAttente = nonConfirmes.filter(r => !pourMoi.includes(r) && !propositions.includes(r));
 
@@ -228,6 +236,7 @@ function renderPlanning(today) {
         <div class="sinfo">${slotInfo(r)} · pris par ${esc(r.assigne_a)}</div>
         ${prisHTML(r)}
         ${r.qualif ? `<div class="sinfo">${esc(r.qualif)}</div>` : ""}
+        ${r.quand > new Date().toISOString() ? confHTML(r) : ""}
         ${ficheHTML(r)}
         <div class="abtns">
           <button class="abtn oui" data-act="log-resultat" data-id="${r.id}">Log le résultat (pré-rempli)</button>
@@ -315,7 +324,7 @@ function renderPlanning(today) {
         return;
       }
       if (act === "copie-conf") {
-        const msg = (MSG_SRV.confirmation || "Coucou {prenom} ! On se retrouve {date} pour notre appel. Tu me confirmes que c'est toujours bon pour toi ?")
+        const msg = (MSG_SRV.confirmation || MSG_RELANCE.confirmation)
           .replace("{prenom}", (b.dataset.nom || "").trim().split(/\s+/)[0] || "")
           .replace("{date}", quandJoli(b.dataset.quand, SalesStats.ymdLocal(new Date())));
         try { await navigator.clipboard.writeText(msg); b.textContent = "Copié, colle-le en DM"; setTimeout(() => { b.textContent = "Copier le message de confirmation"; }, 2000); }
@@ -379,10 +388,11 @@ function cartesBonus(s) {
   }
   if (VUEMOI === "moi" && MOI && MOI.taux_commission) {
     const debutMois = s.today.slice(0, 8) + "01";
+    const finMois = s.today.slice(0, 8) + "31";
     let cash = 0;
     RECORDS.forEach(r => {
       const f = r.fields;
-      if (f[F3.type] === "Vente" && (f[F3.resClosing] || f[F3.resPres]) === "Closé" && f[F3.qui] === MOI.nom && SalesStats.dateOf(r) >= debutMois) {
+      if (f[F3.type] === "Vente" && (f[F3.resClosing] || f[F3.resPres]) === "Closé" && f[F3.qui] === MOI.nom && SalesStats.dateOf(r) >= debutMois && SalesStats.dateOf(r) <= finMois) {
         cash += Number(f[F3.encaisse]) || 0;
       }
     });
@@ -408,6 +418,29 @@ function rdvsVisibles() {
 
 function render() {
   const s = SalesStats.compute(recsVisibles(), PERIOD, new Date());
+  // En vue « Moi », relances et pipeline s'arbitrent sur l'historique COMPLET
+  // de l'équipe (le closing d'un coéquipier éteint ma relance), puis on
+  // restreint aux prospects que j'ai touchés.
+  if (VUEMOI === "moi") {
+    const recsEq = (!voitTout() || VUEQUIPE === "toutes") ? RECORDS : RECORDS.filter(r => r.equipe === VUEQUIPE);
+    const sEq = SalesStats.compute(recsEq, PERIOD, new Date());
+    const miens = new Set(recsVisibles().map(r => SalesStats.keyOf(r)).filter(Boolean));
+    s.relances = sEq.relances.filter(r => r.qui === MOI.nom);
+    s.matin.relancesAFaire = s.relances.length;
+    s.prospects = sEq.prospects.filter(x => x.cle && miens.has(x.cle));
+    const pi2 = { contacte: 0, cale: 0, vu: 0, enVente: 0, aRelancer: 0, close: 0, perdu: 0, total: 0, closeEur: 0, aRelancerEur: 0 };
+    s.prospects.forEach(x => {
+      pi2.total++;
+      if (x.etat === "Closé") { pi2.close++; pi2.closeEur += x.vendu; }
+      else if (x.etat === "À relancer") { pi2.aRelancer++; pi2.aRelancerEur += x.relanceEur; }
+      else if (x.etat === "RDV de vente") pi2.enVente++;
+      else if (x.etat === "Perdu") pi2.perdu++;
+      else if (x.etat === "Vu en setting") pi2.vu++;
+      else if (x.etat === "Setting calé") pi2.cale++;
+      else pi2.contacte++;
+    });
+    s.pipeline = pi2;
+  }
   const g = s.global;
   const F = SalesStats.F;
 
@@ -450,11 +483,14 @@ function render() {
   const ORDRE = ["Setting calé", "Vu en setting", "RDV de vente", "À relancer", "Closé", "Perdu"];
   const filtrePipe = el("pipeFiltre") ? el("pipeFiltre").value : "tous";
   const nrmI = v => String(v || "").trim().toLowerCase().replace(/^@/, "").replace(/\s+/g, "");
+  const nrmT = v => String(v || "").replace(/\D/g, "").slice(-9);
   const clesRdvFutur = new Set(rdvsVisibles()
-    .filter(r => ["propose", "ouvert", "decale", "confirme"].includes(r.statut) && r.quand > new Date().toISOString() && r.instagram)
-    .map(r => nrmI(r.instagram)));
-  const estOrphelin = x => ["Setting calé", "Vu en setting", "RDV de vente", "Contacté"].includes(x.etat) &&
-    !x.relance && !clesRdvFutur.has(nrmI(x.contact));
+    .filter(r => ["propose", "ouvert", "decale", "confirme"].includes(r.statut) && r.quand > new Date().toISOString())
+    .flatMap(r => [r.instagram ? "ig:" + nrmI(r.instagram) : null, r.telephone ? "tel:" + nrmT(r.telephone) : null].filter(Boolean)));
+  const aRdvFutur = x => x.contact && !String(x.contact).trim().startsWith("@")
+    ? clesRdvFutur.has("tel:" + nrmT(x.contact))
+    : clesRdvFutur.has("ig:" + nrmI(x.contact));
+  const estOrphelin = x => ["Setting calé", "Vu en setting", "RDV de vente", "Contacté"].includes(x.etat) && !aRdvFutur(x);
   let prospectsPipe = s.prospects;
   if (filtrePipe === "orphelins") prospectsPipe = s.prospects.filter(estOrphelin);
   if (filtrePipe === "sommeil") prospectsPipe = s.prospects.filter(x => x.sommeil);
@@ -590,6 +626,9 @@ function render() {
   const parCloser = {};
   rdvsVisibles().forEach(r => {
     if (!r.pris_en_s || !r.assigne_a) return;
+    if (VUEMOI === "moi" && r.assigne_a !== MOI.nom) return;
+    const d = SalesStats.ymdLocal(new Date(r.offre_premiere || r.quand));
+    if (d < s.bounds.from || d > s.bounds.to) return;
     (parCloser[r.assigne_a] = parCloser[r.assigne_a] || []).push(r.pris_en_s);
   });
   const medi = arr => { const t2 = arr.slice().sort((x, y) => x - y); return t2[Math.floor(t2.length / 2)]; };
@@ -597,7 +636,7 @@ function render() {
   el("dispatch").innerHTML = dispArr.length
     ? tableHTML([{ t: "Closer" }, { t: "RDV pris", n: 1 }, { t: "Temps médian de prise", n: 1 }],
         dispArr.map(([nom2, arr]) => [{ t: esc(nom2) }, { t: arr.length, n: 1 }, { t: formatDelaiPrise(medi(arr)).replace("pris ", ""), n: 1 }]))
-    : `<div class="empty">Aucun RDV dispatché pris pour l'instant.</div>`;
+    : `<div class="empty">Aucun RDV dispatché pris sur la période.</div>`;
 
   const names = Object.keys(s.people).sort();
   el("people").innerHTML = names.length
@@ -643,7 +682,9 @@ function render() {
   el("bandeauRetard").querySelectorAll("[data-va]").forEach(x => x.addEventListener("click", () => showPage(x.dataset.va)));
 
   // File de relances : les dues, de la plus ancienne à la plus récente
-  FILE_RELANCES = s.relances.slice().sort((x, y) => x.date.localeCompare(y.date));
+  if (el("fileOverlay").style.display === "none") {
+    FILE_RELANCES = s.relances.slice().sort((x, y) => x.date.localeCompare(y.date));
+  }
   majBoutonFile(FILE_RELANCES.length);
 
   // Pastille de la cloche (mobile) : RDV à traiter + relances
@@ -924,7 +965,7 @@ async function submitForm(e) {
       if (el("inMontantRelV").value) c.montant = Number(el("inMontantRelV").value);
     }
     if (PENDING_RDV && TYPE === PENDING_TYPE && cleTxt(c.prospect) === cleTxt(PENDING_PROSPECT)) c.rdv_id = PENDING_RDV;
-    c.objection = el("inObjection").value;
+    if (["Closé", "Pas closé", "À relancer"].includes(c.res_closing)) c.objection = el("inObjection").value;
   }
   el("submitBtn").disabled = true;
   el("submitBtn").textContent = "Enregistrement…";
@@ -954,7 +995,7 @@ function offrePourMoi() {
   if (!MOI || MOI.role === "observateur") return null;
   const moi = MOI.nom;
   return rdvsVisibles().find(r =>
-    !OFFRES_VUES.has(r.id) && r.offre_depuis &&
+    !OFFRES_VUES.has(r.id + "|" + r.offre_depuis) && r.offre_depuis &&
     ((r.statut === "propose" && r.assigne_a === moi) ||
      (r.statut === "ouvert" && roleMatchFront(r.type, MOI.role_vente) && !(r.refusee_par || []).includes(moi) && r.setter !== moi)));
 }
@@ -962,9 +1003,10 @@ function majOffre() {
   const r = offrePourMoi();
   const ov = el("offreOverlay");
   if (!r) { ov.style.display = "none"; if (OFFRE_TIMER) { clearInterval(OFFRE_TIMER); OFFRE_TIMER = null; } return; }
-  if (ov.dataset.rid === r.id && ov.style.display !== "none") return; // déjà affichée
+  const cleOffre = r.id + "|" + (r.offre_depuis || "");
+  if (ov.dataset.rid === cleOffre && ov.style.display !== "none") return; // déjà affichée
   const today = SalesStats.ymdLocal(new Date());
-  ov.dataset.rid = r.id;
+  ov.dataset.rid = cleOffre;
   ov.innerHTML = `
     <div class="offre-carte">
       <div class="offre-type">${r.statut === "propose" ? "RDV pour toi — closer de référence" : "RDV ouvert — premier qui accepte"}</div>
@@ -1011,11 +1053,11 @@ function majOffre() {
   });
   el("offrePasser").addEventListener("click", async () => {
     try { await call("rdv_refuse", { id: r.id }); } catch (_) {}
-    OFFRES_VUES.add(r.id);
+    OFFRES_VUES.add(r.id + "|" + r.offre_depuis);
     ferme();
     loadData();
   });
-  el("offrePlusTard").addEventListener("click", () => { OFFRES_VUES.add(r.id); ferme(); });
+  el("offrePlusTard").addEventListener("click", () => { OFFRES_VUES.add(r.id + "|" + r.offre_depuis); ferme(); majOffre(); });
 }
 
 // ----- Mode file : traiter les relances une par une -----
@@ -1059,6 +1101,7 @@ function montreFile() {
     showPage("log"); resetForm(); setType(r.type === "Vente" ? "Vente" : "Setting");
     el("inProspect").value = r.prospect === "?" ? "" : r.prospect;
     if (String(r.contact).startsWith("@")) el("inInsta").value = r.contact;
+    else if (r.contact) { PENDING_TEL = r.contact; PENDING_TEL_PROSPECT = r.prospect === "?" ? "" : r.prospect; }
     if (r.source) el("inSource").value = r.source;
   });
   el("fileSuivant").addEventListener("click", () => { FILE_IDX++; montreFile(); });
@@ -1170,6 +1213,8 @@ async function chargeRappels() {
         const v = sl.querySelector(".prm-txt").value.slice(0, 4000);
         await call("params_save", { cle: sl.dataset.pcle, valeur: v });
         PARAMS[sl.dataset.pcle] = v;
+        const sm = sl.querySelector("summary");
+        if (sm) sm.textContent = sm.textContent.replace(/ · vide$/, "") + (v.trim() ? "" : " · vide");
         b.textContent = "Enregistré";
         setTimeout(() => { b.textContent = "Enregistrer"; b.disabled = false; }, 1500);
       } catch (e) { alert(e.message); b.textContent = "Enregistrer"; b.disabled = false; }
