@@ -10,7 +10,7 @@ try {
 // Clé PUBLIQUE de signature des notifications (la privée est côté serveur)
 const VAPID_PUB = "BBefpGJrlJu2jhuahy0XnidzpnE5nfZ84kRh3YueXISXD036WLlbQu50vebuJcKKiF05xz5Cj_C__Qa8wc_YWNQ";
 
-let MOI = null, EQUIPE = [], RECORDS = [], RDVS = [], CORBEILLE = [], PROSPECT_FILTRE = "", FICHES = {}, SERVER_OFFSET = 0, OFFRES_VUES = new Set(), FILE_RELANCES = [], FILE_IDX = 0, PERIOD = "1j", TYPE = "Setting", PLANFILTRE = "tous", VUEQUIPE = "toutes", VUEMOI = "equipe", PENDING_RDV = null, PENDING_PROSPECT = "", PENDING_TYPE = "", PENDING_TEL = "", PENDING_TEL_PROSPECT = "";
+let MOI = null, EQUIPE = [], RECORDS = [], RDVS = [], CORBEILLE = [], PROSPECT_FILTRE = "", FICHES = {}, SERVER_OFFSET = 0, OFFRES_VUES = new Set(), FILE_RELANCES = [], FILE_IDX = 0, PERIOD = "1j", TYPE = "Setting", PLANFILTRE = "tous", PLANTYPE = "tous", VUEQUIPE = "toutes", VUEMOI = "equipe", PENDING_RDV = null, PENDING_PROSPECT = "", PENDING_TYPE = "", PENDING_TEL = "", PENDING_TEL_PROSPECT = "";
 const NOM_EQUIPE = { kelian: "Team Kélian", mila: "Team Mila" };
 const voitTout = () => MOI && (MOI.role === "admin" || MOI.role === "observateur");
 const chipEquipe = e => (voitTout() && e) ? `<span class="pill ${e === "mila" ? "teamM" : "teamK"}" title="${NOM_EQUIPE[e] || e}">${e === "mila" ? "M" : "K"}</span> ` : "";
@@ -205,7 +205,17 @@ function renderPlanning(today) {
   const saisiesInline = {};
   document.querySelectorAll(".decale-inline input").forEach(i => { if (i.value) saisiesInline[i.id] = i.value; });
   const retardOuvert = !!document.querySelector("details.retard[open]");
-  const actifs = rdvsVisibles().filter(r => r.statut !== "annule" && r.statut !== "fait");
+  const tousActifs = rdvsVisibles().filter(r => r.statut !== "annule" && r.statut !== "fait");
+  // Le badge de la cloche reste honnête : compté AVANT les filtres d'affichage
+  const badgePourMoi = tousActifs.filter(r => r.statut !== "confirme" && !monConflit(r) &&
+    ((r.statut === "propose" && r.assigne_a === moi) ||
+     (r.statut === "ouvert" && roleMatchFront(r.type, MOI.role_vente) && !(r.refusee_par || []).includes(moi) && r.setter !== moi))).length;
+  const badgeProps = tousActifs.filter(r => r.statut === "decale" && (admin || r.setter === moi)).length;
+  // Filtres de la page : catégorie (Setting / Vente / R2) et « les miens »
+  const typeOk = r => PLANTYPE === "tous" ||
+    (PLANTYPE === "Vente" ? ["Vente", "Prez", "Closing"].includes(r.type) : r.type === PLANTYPE);
+  const quiOk = r => PLANFILTRE !== "moi" || r.assigne_a === moi || r.setter === moi;
+  const actifs = tousActifs.filter(r => typeOk(r) && quiOk(r));
   const nonConfirmes = actifs.filter(r => r.statut !== "confirme");
 
   const pourMoi = nonConfirmes.filter(r => !monConflit(r) &&
@@ -214,8 +224,8 @@ function renderPlanning(today) {
   const propositions = actifs.filter(r => r.statut === "decale" && (admin || r.setter === moi));
   const enAttente = nonConfirmes.filter(r => !pourMoi.includes(r) && !propositions.includes(r));
 
-  el("bPlan").style.display = (pourMoi.length + propositions.length) ? "" : "none";
-  el("bPlan").textContent = pourMoi.length + propositions.length;
+  el("bPlan").style.display = (badgePourMoi + badgeProps) ? "" : "none";
+  el("bPlan").textContent = badgePourMoi + badgeProps;
 
   const ficheHTML = r => r.fiche ? `<details style="margin-bottom:10px"><summary>fiche prospect</summary><div>${esc(r.fiche)}</div></details>` : "";
   const outilsSetter = r => (admin || r.setter === moi)
@@ -333,12 +343,11 @@ function renderPlanning(today) {
         <div class="abtns">${quickresHTML(r)} ${outilsSetter(r)}</div>
       </div>`).join("") + `</details>`;
   }
-  el("aprendre").innerHTML = html || `<div class="empty">Rien pour l'instant. Les settings calés et les RDV de vente arrivent ici.</div>`;
+  el("aprendre").innerHTML = html || `<div class="empty">${PLANTYPE !== "tous" || PLANFILTRE === "moi" ? "Rien dans ce filtre." : "Rien pour l'instant. Les settings calés et les RDV de vente arrivent ici."}</div>`;
   el("propositions").innerHTML = "";
 
   // Emploi du temps (aujourd'hui -> +14 jours)
   let liste = actifs.filter(r => jourLocal(r.quand) >= today);
-  if (PLANFILTRE === "moi") liste = liste.filter(r => r.assigne_a === moi || r.setter === moi);
   liste.sort((a, c) => a.quand.localeCompare(c.quand));
   const parJour = {};
   liste.forEach(r => { const j = jourLocal(r.quand); (parJour[j] = parJour[j] || []).push(r); });
@@ -353,7 +362,7 @@ function renderPlanning(today) {
             <span class="pill">${r.assigne_a ? esc(r.assigne_a) : "?"}</span>
             <span class="conf ${r.statut === "confirme" ? "today" : ""}" style="font-size:12px">${r.statut === "confirme" ? "confirmé" : "en attente"}</span>
           </div>`).join("")).join("")
-    : `<div class="empty">Aucun RDV à venir${PLANFILTRE === "moi" ? " pour toi" : ""}.</div>`;
+    : `<div class="empty">Aucun RDV à venir${PLANFILTRE === "moi" || PLANTYPE !== "tous" ? " dans ce filtre" : ""}.</div>`;
 
   inlinesOuverts.forEach(id => { const d = el(id); if (d) d.style.display = "flex"; });
   Object.entries(saisiesInline).forEach(([id, v]) => { const i = el(id); if (i) i.value = v; });
@@ -1906,6 +1915,8 @@ async function init() {
   el("fileDemarrer").addEventListener("click", () => { FILE_IDX = 0; montreFile(); });
   el("btnScript").addEventListener("click", montreScript);
   el("vueMoi").addEventListener("change", () => { VUEMOI = el("vueMoi").value; render(); });
+  el("planType").addEventListener("change", () => { PLANTYPE = el("planType").value; render(); });
+  el("planQui").addEventListener("change", () => { PLANFILTRE = el("planQui").value; render(); });
   let chercheT = null;
   el("prospectCherche").addEventListener("input", () => {
     clearTimeout(chercheT);
@@ -1914,8 +1925,7 @@ async function init() {
   el("inEncaisseSel").addEventListener("change", majConditionnels);
   el("inCaleLe").addEventListener("change", () => majJourHint("inCaleLe", "jourHintCale"));
   el("inSuiteLe").addEventListener("change", () => majJourHint("inSuiteLe", "jourHintSuite"));
-  el("planMoi").addEventListener("click", () => { PLANFILTRE = "moi"; el("planMoi").classList.add("active"); el("planTous").classList.remove("active"); render(); });
-  el("planTous").addEventListener("click", () => { PLANFILTRE = "tous"; el("planTous").classList.add("active"); el("planMoi").classList.remove("active"); render(); });
+
   el("refresh").addEventListener("click", loadData);
   el("logForm").addEventListener("submit", submitForm);
   document.addEventListener("click", debloqueAudio);
