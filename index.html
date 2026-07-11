@@ -55,24 +55,28 @@
   .fsel-b input, .field .fsel-b input { flex:1; min-width:0; appearance:none; border:none; border-radius:0; background:transparent; color:var(--ink); font-size:14px; font-family:inherit; height:100%; padding:0; }
   .field .fsel-b select { flex:1; min-width:0; max-width:none; background-color:transparent; }
   .fsel-b input:focus { outline:none; }
-  .cal-head { display:grid; grid-template-columns:repeat(7,1fr); padding:0 1px; }
-  .cal-head div { padding:6px; font-size:10.5px; letter-spacing:.09em; color:var(--muted); text-transform:uppercase; }
-  .cal-grid { display:grid; grid-template-columns:repeat(7,1fr); border:1px solid var(--line); border-radius:14px; overflow:hidden; background:var(--cardbg); }
-  .cal-cell { min-height:88px; border-top:1px solid var(--line); border-left:1px solid var(--line); padding:6px; cursor:pointer; }
+  .cal-wrap { background:linear-gradient(160deg, #161226 0%, #100d1a 55%, #0e0b17 100%); border:1px solid var(--line); border-radius:18px; overflow:hidden; }
+  .cal-head { display:grid; grid-template-columns:repeat(7,1fr); background:rgba(167,139,250,.04); border-bottom:1px solid var(--line); }
+  .cal-head div { padding:13px 12px; font-size:11px; letter-spacing:.14em; color:var(--muted); text-transform:uppercase; font-weight:650; }
+  .cal-grid { display:grid; grid-template-columns:repeat(7,1fr); }
+  .cal-cell { min-height:118px; border-top:1px solid var(--line); border-left:1px solid var(--line); padding:10px; cursor:pointer; transition:background .12s; }
+  .cal-cell:hover { background:rgba(167,139,250,.06); }
   .cal-cell:nth-child(-n+7) { border-top:none; }
   .cal-cell:nth-child(7n+1) { border-left:none; }
-  .cal-cell.hors { opacity:.35; }
-  .cal-cell.auj { background:rgba(167,139,250,.08); }
-  .cal-num { font-size:12.5px; font-weight:600; margin-bottom:4px; }
-  .cal-chip { display:block; font-size:11px; line-height:1.35; padding:2px 6px; border-radius:6px; margin-bottom:3px; background:rgba(167,139,250,.16); border:1px solid rgba(167,139,250,.3); color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .cal-cell.hors { opacity:.32; }
+  .cal-cell.auj { background:rgba(167,139,250,.09); }
+  .cal-num { font-size:13.5px; font-weight:650; margin-bottom:7px; }
+  .cal-cell.auj .cal-num { display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px; border-radius:50%; background:var(--accent); color:#140b26; }
+  .cal-chip { display:block; font-size:11.5px; line-height:1.4; padding:3px 8px; border-radius:7px; margin-bottom:4px; background:rgba(167,139,250,.16); border:1px solid rgba(167,139,250,.3); color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .cal-chip.setting { background:rgba(148,141,166,.13); border-color:rgba(148,141,166,.3); }
   .cal-chip.r2 { background:rgba(245,158,11,.13); border-color:rgba(245,158,11,.35); }
   .cal-chip.attente { opacity:.6; border-style:dashed; }
   .cal-plus { font-size:10.5px; color:var(--muted); }
-  .sem-wrap { overflow-x:auto; border:1px solid var(--line); border-radius:14px; background:var(--cardbg); }
+  .sem-wrap { overflow-x:auto; border:1px solid var(--line); border-radius:18px; background:linear-gradient(160deg, #161226 0%, #100d1a 55%, #0e0b17 100%); }
   .sem-grid { display:grid; grid-template-columns:48px repeat(7,minmax(92px,1fr)); min-width:700px; }
-  .sem-jour { padding:8px 6px; text-align:center; font-size:12px; color:var(--muted); border-left:1px solid var(--line); border-bottom:1px solid var(--line); }
-  .sem-jour b { display:block; font-size:15px; color:var(--ink); }
+  .sem-jour { padding:12px 6px 10px; text-align:center; font-size:11px; letter-spacing:.14em; text-transform:uppercase; font-weight:650; color:var(--muted); border-left:1px solid var(--line); border-bottom:1px solid var(--line); }
+  .sem-jour b { display:block; font-size:19px; color:var(--ink); margin-top:3px; letter-spacing:0; }
+  .sem-jour.auj b { color:var(--accent); }
   .sem-jour.auj b { color:var(--accent); }
   .sem-col { position:relative; border-left:1px solid var(--line); }
   .sem-heures { font-size:10px; color:var(--muted); text-align:right; padding-right:6px; }
@@ -83,9 +87,15 @@
   .sem-ev.lane2 { left:50%; width:47%; }
   .sem-ligne { position:absolute; left:0; right:0; height:2px; background:#f87171; z-index:2; }
   .sem-ligne::before { content:""; position:absolute; left:-4px; top:-3px; width:8px; height:8px; border-radius:50%; background:#f87171; }
-  .agnav { background:none; border:none; color:var(--ink); font-size:19px; padding:4px 8px; cursor:pointer; border-radius:8px; }
+  .agbar { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:18px; }
+  .agbar .abtn { padding:11px 20px; font-size:14px; }
+  .agnav { background:none; border:none; color:var(--ink); font-size:21px; padding:6px 10px; cursor:pointer; border-radius:10px; line-height:1; }
   .agnav:hover { background:rgba(167,139,250,.12); }
-  .agseg { display:flex; }
+  .agper { height:46px; border-radius:99px; padding:0 8px; }
+  .agper span { font-size:14.5px !important; font-weight:650 !important; padding:0 10px !important; }
+  .agseg { display:flex; gap:4px; background:var(--cardbg); border:1px solid var(--line); border-radius:99px; padding:4px; }
+  .agseg button { border:none; background:none; color:var(--muted); padding:8px 18px; border-radius:99px; cursor:pointer; font-size:13.5px; font-family:inherit; font-weight:600; }
+  .agseg button.active { background:var(--accent); color:#140b26; }
   .cal-chip.perso, .sem-ev.perso { background:rgba(148,141,166,.08); border-color:var(--line); color:var(--muted); }
   .sem-jour.auj { background:rgba(167,139,250,.10); }
   .sem-col.auj { background:rgba(167,139,250,.05); }
@@ -567,14 +577,14 @@
       <div id="planning"></div>
     </section>
     <section class="page" id="page-agenda">
-      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px">
+      <div class="agbar">
         <button class="abtn" id="agAuj">Aujourd'hui</button>
-        <div class="fsel" style="gap:2px;padding:0 6px">
+        <div class="fsel agper">
           <button class="agnav" id="agPrec">&#8249;</button>
-          <span id="agTitre" style="font-size:13.5px;font-weight:600;padding:0 8px;white-space:nowrap"></span>
+          <span id="agTitre" style="white-space:nowrap"></span>
           <button class="agnav" id="agSuiv">&#8250;</button>
         </div>
-        <div class="controls agseg" style="margin:0">
+        <div class="agseg">
           <button data-agmode="jour">Jour</button>
           <button data-agmode="semaine">Semaine</button>
           <button data-agmode="mois" class="active">Mois</button>
@@ -614,7 +624,7 @@
   </main>
 </div>
 
-<script src="stats.js?v=25"></script>
-<script src="app.js?v=25"></script>
+<script src="stats.js?v=26"></script>
+<script src="app.js?v=26"></script>
 </body>
 </html>
