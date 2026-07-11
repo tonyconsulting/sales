@@ -146,7 +146,7 @@
     all.forEach(r => {
       const k = keyOf(r);
       if (!k) return;
-      if (!st[k]) st[k] = { cale: false, vu: false, enVente: false, relance: false, close: false, perdu: false,
+      if (!st[k]) st[k] = { cle: k, cale: false, vu: false, enVente: false, relance: false, close: false, perdu: false,
                             enVenteLe: "", relanceLe: "", perduLe: "", caleLe: "", vuLe: "",
                             nom: "", contact: "", source: "", dernier: "", vendu: 0, encaisse: 0, relanceEur: 0 };
       const s = st[k], f = r.fields;
