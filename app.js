@@ -56,6 +56,16 @@ const msgRelance = r => (MSG_SRV[r.categorie] || MSG_RELANCE[r.categorie] || MSG
 
 const CATS_MSG = ["No-show", "Pas intéressé", "Pas le budget", "Réfléchit", "À rappeler", "À relancer", "defaut"];
 const CAT_LABEL = { defaut: "Autres cas (Non qualifié, Autre...)" };
+// Pilules de réglage (même style que la barre de filtres)
+const IC_REG = {
+  qui: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c0-3.5 3-5.5 7-5.5s7 2 7 5.5"/></svg>',
+  cond: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h18l-7 8v6l-4 2v-8L3 4Z"/></svg>',
+  temps: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>',
+  etat: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v10"/><path d="M18.4 6.6a9 9 0 1 1-12.8 0"/></svg>',
+  titre: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V5h16v2"/><path d="M12 5v14"/><path d="M9 19h6"/></svg>'
+};
+const pilule = (icone, contenu) => `<div class="fsel fsel-b">${icone}${contenu}</div>`;
+
 // Catalogue des notifications d'événements (textes modifiables dans Réglages)
 const NOTIFS_CATALOGUE = [
   { cle: "vente_propose", label: "RDV proposé au closer de référence", balises: "{prospect} {quand} {setter}", defaut: ["RDV de vente à prendre", "{prospect}, {quand} (setter : {setter}). Ouvre le planning pour accepter."] },
@@ -816,7 +826,7 @@ async function chargeRappels() {
         return `
       <div class="slot" data-ncle="${n.cle}">
         <div class="stitre">${n.label}</div>
-        <div class="field"><label>Titre</label><input class="nt-titre" maxlength="80" value="${esc(cur.titre)}"></div>
+        <div class="field"><label>Titre</label>${pilule(IC_REG.titre, `<input class="nt-titre" maxlength="80" value="${esc(cur.titre)}">`)}</div>
         <div class="field"><label>Message (balises : ${esc(n.balises)})</label><textarea class="nt-corps" maxlength="300">${esc(cur.corps)}</textarea></div>
         <div class="abtns"><button class="abtn oui nt-save">Enregistrer</button></div>
       </div>`;
@@ -826,21 +836,21 @@ async function chargeRappels() {
       rows.map(g => `
       <div class="slot" data-rid="${g.id}">
         <div class="row2">
-          <div class="field"><label>Destinataire</label>
+          <div class="field"><label>Destinataire</label>${pilule(IC_REG.qui, `
             <select class="rg-cible">
               <option value="assigne"${g.cible === "assigne" ? " selected" : ""}>Celui qui a le RDV</option>
               <option value="setter"${g.cible === "setter" ? " selected" : ""}>Le setter</option>
               <option value="admin"${g.cible === "admin" ? " selected" : ""}>Toi (admin)</option>
-            </select></div>
-          <div class="field"><label>Condition</label>
+            </select>`)}</div>
+          <div class="field"><label>Condition</label>${pilule(IC_REG.cond, `
             <select class="rg-statut">
               <option value=""${g.seulement_statut ? "" : " selected"}>RDV confirmés</option>
               <option value="ouvert"${g.seulement_statut === "ouvert" ? " selected" : ""}>Seulement RDV sans preneur</option>
-            </select></div>
+            </select>`)}</div>
         </div>
         <div class="row2">
-          <div class="field"><label>Minutes avant le RDV (240 = 4 h, min 5)</label><input type="number" min="5" max="10080" class="rg-delai" value="${g.delai_min}"></div>
-          <div class="field"><label>État</label><select class="rg-actif"><option value="oui"${g.actif ? " selected" : ""}>Actif</option><option value="non"${g.actif ? "" : " selected"}>Coupé</option></select></div>
+          <div class="field"><label>Minutes avant le RDV (240 = 4 h, min 5)</label>${pilule(IC_REG.temps, `<input type="number" min="5" max="10080" class="rg-delai" value="${g.delai_min}">`)}</div>
+          <div class="field"><label>État</label>${pilule(IC_REG.etat, `<select class="rg-actif"><option value="oui"${g.actif ? " selected" : ""}>Actif</option><option value="non"${g.actif ? "" : " selected"}>Coupé</option></select>`)}</div>
         </div>
         <div class="field"><label>Message (300 caractères max)</label><textarea class="rg-msg" maxlength="300">${esc(g.message)}</textarea></div>
         <div class="abtns"><button class="abtn oui rg-save">Enregistrer</button><button class="abtn non rg-del">Supprimer</button></div>
