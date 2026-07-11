@@ -164,12 +164,12 @@ function majOffZone(today) {
   const z = el("offZone");
   if (!z || !MOI || MOI.role === "observateur") { if (z) z.innerHTML = ""; return; }
   const off = MOI.off_jusqu_au && MOI.off_jusqu_au >= today;
-  // Discret, en haut à droite : calendrier + pilule d'état
+  // Discret, en haut à droite : calendrier + pilule d'état (compactes, jamais étalées)
   const webcal = API.replace(/^https:\/\//, "webcal://") + "?ics=" + encodeURIComponent(CODE);
   z.innerHTML = `
-    <div style="display:flex;justify-content:flex-end;gap:8px;margin:-4px 0 10px">
-      <a class="fsel fsel-b" href="${webcal}" style="text-decoration:none;color:var(--fg)" title="Tes RDV Kairós directement dans le Calendrier Apple, mis à jour tout seuls">${IC_REG.temps}<span style="padding:0 4px">Mon calendrier</span></a>
-      ${pilule(IC_REG.etat, `<select id="offSelect" ${off ? 'style="color:#f87171"' : ""}>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin:-4px 0 10px;flex-wrap:wrap">
+      <a class="fsel" href="${webcal}" style="text-decoration:none;color:var(--ink);font-size:13.5px;padding:0 13px" title="Tes RDV Kairós directement dans le Calendrier Apple, mis à jour tout seuls">${IC_REG.temps}Mon calendrier</a>
+      <div class="fsel">${IC_REG.etat}<select id="offSelect" ${off ? 'style="color:#f87171"' : ""}>
         ${off
           ? `<option value="">Off jusqu'au ${jolieDate(MOI.off_jusqu_au, today)}</option><option value="retour">Je suis de retour</option>`
           : `<option value="">Dispo</option>
@@ -177,7 +177,7 @@ function majOffZone(today) {
              <option value="3">Off 3 jours</option>
              <option value="7">Off 1 semaine</option>
              <option value="14">Off 2 semaines</option>`}
-      </select>`)}
+      </select></div>
     </div>`;
   el("offSelect").addEventListener("change", async () => {
     const v = el("offSelect").value;
