@@ -36,16 +36,16 @@ const quandJoli = (iso, today) => jolieDate(jourLocal(iso), today) + " à " + he
 const PAGES = {
   log: ["Log un call", "Après chaque call, 20 secondes"],
   dashboard: ["Dashboard", "Vue d'ensemble"],
-  pipeline: ["Pipeline", "Suivez vos deals"],
+  pipeline: ["Pipeline", "Tes deals, du contact au closé"],
   prospects: ["Prospects", "Tous les prospects identifiés"],
   planning: ["Planning", "Les RDV à prendre et l'emploi du temps"],
   agenda: ["Agenda", "Le calendrier de l'équipe"],
   appels: ["Appels", "Les 100 derniers calls loggés"],
   relances: ["Relances", "Les follow-ups à faire"],
-  kpi: ["KPI", "Analysez vos perfs"],
+  kpi: ["KPI", "Les chiffres qui ne mentent pas"],
   reglages: ["Réglages", "Rappels automatiques et messages de relance"]
 };
-const ETAT_PILL = { "Closé": "", "À relancer": "amber", "RDV de vente": "", "Vu en setting": "grey", "Setting calé": "grey", "Perdu": "red", "Contacté": "grey" };
+const ETAT_PILL = { "Closé": "green", "À relancer": "amber", "RDV de vente": "", "Vu en setting": "blue", "Setting calé": "grey", "Perdu": "red", "Contacté": "grey" };
 // Messages de relance prêts à coller (DM Instagram), par catégorie
 const MSG_RELANCE = {
   "No-show": "Coucou {prenom} ! On avait rendez-vous {date} et on s'est loupés, aucun souci ça arrive. Tu préfères qu'on recale ça quand ?",
@@ -195,7 +195,7 @@ function majOffZone(today) {
         MOI.off_jusqu_au = jusqu;
       }
       render();
-    } catch (e) { alert(e.message); el("offSelect").value = ""; }
+    } catch (e) { toast("Ça n'a pas marché : " + e.message, "err"); el("offSelect").value = ""; }
   });
 }
 function renderPlanning(today) {
@@ -228,7 +228,7 @@ function renderPlanning(today) {
   el("bPlan").style.display = (badgePourMoi + badgeProps) ? "" : "none";
   el("bPlan").textContent = badgePourMoi + badgeProps;
 
-  const ficheHTML = r => r.fiche ? `<details style="margin-bottom:10px"><summary>fiche prospect</summary><div>${esc(r.fiche)}</div></details>` : "";
+  const ficheHTML = r => r.fiche ? `<details style="margin-bottom:10px"><summary>Fiche prospect</summary><div>${esc(r.fiche)}</div></details>` : "";
   const outilsSetter = r => (admin || r.setter === moi)
     ? (r.statut === "propose" ? `<button class="abtn" data-act="rdv_ouvre" data-id="${r.id}">Ouvrir à tous</button>` : "") +
       `<button class="abtn non" data-act="rdv_annule" data-id="${r.id}">Annuler</button>`
@@ -248,7 +248,7 @@ function renderPlanning(today) {
   if (pourMoi.length) {
     html += zone("À prendre — c'est pour toi", "var(--accent)", pourMoi.length, pourMoi.map(r => `
       <div class="slot" ${r.offre_niveau >= 3 ? 'style="border-color:#7f1d1d"' : ""}>
-        <div class="stitre">${chipEquipe(r.equipe)}${esc(r.type)} · ${quandJoli(r.quand, today)}${r.offre_niveau >= 3 ? ' · <span class="late">SANS PRENEUR</span>' : ""}</div>
+        <div class="stitre">${chipEquipe(r.equipe)}${esc(r.type)} · ${quandJoli(r.quand, today)}${r.offre_niveau >= 3 ? ' <span class="pill red">Sans preneur</span>' : ""}</div>
         <div class="sinfo">${slotInfo(r)}</div>
         ${ficheHTML(r)}
         <div class="abtns">
@@ -300,7 +300,7 @@ function renderPlanning(today) {
     html += zone("À logger — l'appel est passé (ou c'est aujourd'hui)", "#fbbf24", aLogger.length, aLogger.map(r => `
       <div class="slot">
         <div class="stitre">${chipEquipe(r.equipe)}${esc(r.type)} · ${quandJoli(r.quand, today)} · ${esc(r.prospect)}</div>
-        <div class="sinfo">${slotInfo(r)} · pris par ${esc(r.assigne_a)}</div>
+        <div class="sinfo">${slotInfo(r)} · pris par ${avi(r.assigne_a)}</div>
         ${prisHTML(r)}${r2HTML(r)}
         ${r.qualif ? `<div class="sinfo">${esc(r.qualif)}</div>` : ""}
         ${r.quand > new Date().toISOString() ? confHTML(r) : ""}
@@ -319,7 +319,7 @@ function renderPlanning(today) {
     html += zone("À venir — confirmés", "#34d399", aVenir.length, aVenir.map(r => `
       <div class="slot">
         <div class="stitre">${chipEquipe(r.equipe)}${esc(r.type)} · ${quandJoli(r.quand, today)} · ${esc(r.prospect)}</div>
-        <div class="sinfo">${slotInfo(r)} · pris par ${esc(r.assigne_a)}</div>
+        <div class="sinfo">${slotInfo(r)} · pris par ${avi(r.assigne_a)}</div>
         ${prisHTML(r)}${r2HTML(r)}
         ${r.qualif ? `<div class="sinfo">${esc(r.qualif)}</div>` : ""}
         ${confHTML(r)}
@@ -334,7 +334,7 @@ function renderPlanning(today) {
   if (enAttente.length) {
     html += zone("En cours d'attribution", "#948da6", enAttente.length, enAttente.map(r => `
       <div class="slot ${r.offre_niveau >= 3 ? "" : "grise"}" ${r.offre_niveau >= 3 ? 'style="border-color:#7f1d1d"' : ""}>
-        <div class="stitre">${chipEquipe(r.equipe)}${esc(r.type)} · ${quandJoli(r.quand, today)}${r.offre_niveau >= 3 ? ' · <span class="late">SANS PRENEUR</span>' : ""}</div>
+        <div class="stitre">${chipEquipe(r.equipe)}${esc(r.type)} · ${quandJoli(r.quand, today)}${r.offre_niveau >= 3 ? ' <span class="pill red">Sans preneur</span>' : ""}</div>
         <div class="sinfo">${slotInfo(r)}</div>
         <div class="setat">${etatTexte(r)}</div>
         <div class="abtns">${reassignHTML(r)}${outilsSetter(r)}</div>
@@ -346,7 +346,7 @@ function renderPlanning(today) {
       enRetard.map(r => `
       <div class="slot grise">
         <div class="stitre">${chipEquipe(r.equipe)}${esc(r.type)} · ${quandJoli(r.quand, today)} · ${esc(r.prospect)}</div>
-        <div class="sinfo">${slotInfo(r)} · pris par ${esc(r.assigne_a)} — résultat jamais loggé</div>
+        <div class="sinfo">${slotInfo(r)} · pris par ${avi(r.assigne_a)} — résultat jamais loggé</div>
         <div class="abtns">${quickresHTML(r)} ${outilsSetter(r)}</div>
       </div>`).join("") + `</details>`);
   }
@@ -366,7 +366,7 @@ function renderPlanning(today) {
             <span class="h">${heureLocale(r.quand)}</span>
             ${chipEquipe(r.equipe)}<span class="pill grey">${esc(r.type)}</span>
             <span>${esc(r.prospect)}</span>
-            <span class="pill">${r.assigne_a ? esc(r.assigne_a) : "?"}</span>
+            <span>${r.assigne_a ? avi(r.assigne_a) : `<span class="pill amber">À prendre</span>`}</span>
             <span class="conf ${r.statut === "confirme" ? "today" : ""}" style="font-size:12px">${r.statut === "confirme" ? "confirmé" : "en attente"}</span>
           </div>`).join("")).join("") + `</div>`
     : `<div class="empty">Aucun RDV à venir${PLANFILTRE === "moi" || PLANTYPE !== "tous" ? " dans ce filtre" : ""}.</div>`;
@@ -377,12 +377,14 @@ function renderPlanning(today) {
 
   document.querySelectorAll("[data-act]").forEach(b => b.addEventListener("click", async () => {
     const id = b.dataset.id, act = b.dataset.act;
+    if (b.classList.contains("busy")) return;
+    if (!act.startsWith("toggle")) b.classList.add("busy");
     try {
       if (act === "toggle-decale") { const d = el("dec-" + id); d.style.display = d.style.display === "flex" ? "none" : "flex"; return; }
       if (act === "toggle-deplace") { const d = el("dep-" + id); d.style.display = d.style.display === "flex" ? "none" : "flex"; return; }
       if (act === "rdv_deplace") {
         const v = el("deph-" + id).value;
-        if (!v) return alert("Choisis le nouvel horaire.");
+        if (!v) return toast("Choisis le nouvel horaire.", "err");
         await call("rdv_deplace", { id, quand: new Date(v).toISOString() });
         await loadData();
         return;
@@ -393,7 +395,7 @@ function renderPlanning(today) {
         return;
       }
       if (act === "r2-encaisse") {
-        try { await call("r2_encaisse", { id }); } catch (e) { alert(e.message); }
+        try { await call("r2_encaisse", { id }); } catch (e) { toast("Ça n'a pas marché : " + e.message, "err"); }
         await loadData();
         return;
       }
@@ -402,7 +404,7 @@ function renderPlanning(today) {
           .replace("{prenom}", (b.dataset.nom || "").trim().split(/\s+/)[0] || "")
           .replace("{date}", quandJoli(b.dataset.quand, SalesStats.ymdLocal(new Date())));
         try { await navigator.clipboard.writeText(msg); b.textContent = "Copié, colle-le en DM"; setTimeout(() => { b.textContent = "Copier le message de confirmation"; }, 2000); }
-        catch (_) { prompt("Copie le message :", msg); }
+        catch (_) { copieManuelle(msg, "Copie le message"); }
         return;
       }
       if (act === "log-resultat") {
@@ -412,14 +414,15 @@ function renderPlanning(today) {
       }
       if (act === "rdv_propose") {
         const v = el("dech-" + id).value;
-        if (!v) return alert("Choisis le nouvel horaire.");
+        if (!v) return toast("Choisis le nouvel horaire.", "err");
         await call("rdv_propose", { id, quand: new Date(v).toISOString() });
       } else if (act === "prop-oui") await call("rdv_reponse_proposition", { id, ok: true });
       else if (act === "prop-non") await call("rdv_reponse_proposition", { id, ok: false });
-      else if (act === "rdv_annule") { if (!confirm("Annuler ce RDV ?")) return; await call("rdv_annule", { id }); }
+      else if (act === "rdv_annule") { if (!(await confirmer({ titre: "Annuler ce RDV ?", ok: "Oui, annuler", danger: true }))) return; await call("rdv_annule", { id }); }
       else await call(act, { id });
       await loadData();
-    } catch (e) { alert(e.message); }
+    } catch (e) { toast("Ça n'a pas marché : " + e.message, "err"); }
+    finally { b.classList.remove("busy"); }
   }));
 
   // Dashboard : RDV du jour depuis le planning (suit la vue Moi / équipe)
@@ -433,8 +436,8 @@ function renderPlanning(today) {
           { t: heureLocale(r.quand) },
           { t: `<span class="pill grey">${esc(r.type)}</span>` },
           { t: esc(r.prospect) },
-          { t: `<span class="pill">${r.assigne_a ? esc(r.assigne_a) : "?"}</span>` },
-          { t: esc(r.setter) },
+          { t: r.assigne_a ? avi(r.assigne_a) : `<span class="pill amber">À prendre</span>` },
+          { t: avi(r.setter) },
           { t: r.statut === "confirme" ? `<span class="today">confirmé</span>` : `<span class="late">en attente</span>` },
           { t: r.fiche ? `<details><summary>voir</summary><div>${esc(r.fiche)}</div></details>` : "" }
         ]))
@@ -632,7 +635,7 @@ function render() {
             { t: `<a href="#" class="fiche-lien" data-cle="${esc(x.cle || "")}" style="color:var(--fg);text-decoration:underline dotted var(--muted)">${esc(x.nom || "?")}</a>` }, { t: esc(x.contact) }, { t: esc(x.source || "–") },
             { t: `<span class="pill ${ETAT_PILL[x.etat] || ""}">${esc(x.etat)}</span>` },
             { t: quick },
-            { t: esc(x.dernier) + (x.sommeil ? ` <span class="rot">(${x.joursSans} j)</span>` : "") }, { t: eur(x.vendu), n: 1 }, { t: eur(x.encaisse), n: 1 }
+            { t: esc(jolieDate(x.dernier, s.today)) + (x.sommeil ? ` <span class="rot">(${x.joursSans} j)</span>` : "") }, { t: eurOu(x.vendu), n: 1 }, { t: eurOu(x.encaisse), n: 1 }
           ];
         }))
     : `<div class="empty">${filtreP ? "Aucun prospect ne correspond à la recherche." : "Aucun prospect identifié."}</div>`;
@@ -657,14 +660,14 @@ function render() {
           let res = f[F.resSetting] || f[F.resPres] || f[F.resClosing] || (f[F.type] === "Paiement" ? "Encaissement" : "–");
           if (f[F.cause]) res += " (" + f[F.cause] + ")";
           const boutons = [];
-          if (peutCorriger(r)) boutons.push(`<button class="del" data-corrige="${r.id}">corriger</button>`);
-          if (admin2) boutons.push(`<button class="del" data-debrief="${r.id}">${r.debrief ? "débrief ✓" : "débrief"}</button>`);
-          else if (r.debrief) boutons.push(`<button class="del" data-debrief="${r.id}">débrief</button>`);
-          if (admin2) boutons.push(`<button class="del" data-id="${r.id}" title="Mettre à la corbeille">suppr.</button>`);
+          if (peutCorriger(r)) boutons.push(`<button class="del" data-corrige="${r.id}">Corriger</button>`);
+          if (admin2) boutons.push(`<button class="del" data-debrief="${r.id}">${r.debrief ? "Débriefé" : "Débrief"}</button>`);
+          else if (r.debrief) boutons.push(`<button class="del" data-debrief="${r.id}">Débrief</button>`);
+          if (admin2) boutons.push(`<button class="del" data-id="${r.id}" title="Mettre à la corbeille">Supprimer</button>`);
           const row = [
-            { t: esc(SalesStats.dateOf(r)) },
+            { t: esc(jolieDate(SalesStats.dateOf(r), s.today)) },
             { t: chipEquipe(r.equipe) + `<span class="pill grey">${esc(f[F.type] || "?")}</span>` },
-            { t: esc(f[F.qui] || "?") }, { t: esc(f[F.prospect] || "?") }, { t: esc(res) },
+            { t: avi(f[F.qui] || "?") }, { t: esc(f[F.prospect] || "?") }, { t: esc(res) },
             { t: f[F.montant] ? eur(f[F.montant]) : "", n: 1 },
             { t: f[F.encaisse] ? eur(f[F.encaisse]) : "", n: 1 },
             { t: boutons.join(" "), n: 1 }
@@ -675,8 +678,8 @@ function render() {
   document.querySelectorAll("[data-corrige]").forEach(b => b.addEventListener("click", () => montreCorrige(b.dataset.corrige)));
   document.querySelectorAll("[data-debrief]").forEach(b => b.addEventListener("click", () => montreDebrief(b.dataset.debrief)));
   document.querySelectorAll(".del[data-id]").forEach(b => b.addEventListener("click", async () => {
-    if (!confirm("Mettre ce call à la corbeille ? S'il avait créé un RDV au planning, le RDV sera annulé. Restaurable pendant 30 jours en bas de cette page.")) return;
-    try { await call("delete", { id: b.dataset.id }); await loadData(); } catch (e) { alert(e.message); }
+    if (!(await confirmer({ titre: "Mettre ce call à la corbeille ?", texte: "S'il avait créé un RDV au planning, le RDV sera annulé. Restaurable pendant 30 jours en bas de cette page.", ok: "À la corbeille", danger: true }))) return;
+    try { await call("delete", { id: b.dataset.id }); await loadData(); } catch (e) { toast("Ça n'a pas marché : " + e.message, "err"); }
   }));
 
   // Corbeille (admin) : restaurable 30 jours
@@ -691,7 +694,7 @@ function render() {
           </div>`).join("")}
       </details>` : "";
     document.querySelectorAll("[data-restaure]").forEach(b => b.addEventListener("click", async () => {
-      try { await call("call_restore", { id: b.dataset.restaure }); await loadData(); } catch (e) { alert(e.message); }
+      try { await call("call_restore", { id: b.dataset.restaure }); await loadData(); } catch (e) { toast("Ça n'a pas marché : " + e.message, "err"); }
     }));
   }
 
@@ -699,10 +702,10 @@ function render() {
     ? tableHTML(
         [{ t: "Pour le" }, { t: "Prospect" }, { t: "Contact" }, { t: "Catégorie" }, { t: "Source" }, { t: "Qui" }, { t: "Notes" }, { t: "" }],
         s.relances.map(r => [
-          { t: r.date < s.today ? `<span class="late">${esc(r.date)}</span>` : esc(r.date) },
+          { t: r.date < s.today ? `<span class="late">${esc(jolieDate(r.date, s.today))}</span>` : esc(jolieDate(r.date, s.today)) },
           { t: esc(r.prospect) }, { t: esc(r.contact) },
           { t: `<span class="pill amber">${esc(r.categorie || "–")}</span>` + (r.echange ? `<div style="color:var(--muted);font-size:11px;margin-top:3px">échange du ${esc(jolieDate(r.echange, s.today))}</div>` : "") },
-          { t: esc(r.source || "–") }, { t: esc(r.qui) },
+          { t: esc(r.source || "–") }, { t: avi(r.qui) },
           { t: r.notes ? `<details><summary>voir</summary><div>${esc(r.notes)}</div></details>` : "" },
           { t: MOI.role === "observateur" ? "" : `<button class="abtn rel-copie" data-msg="${esc(msgRelance(r))}">Copier le message</button> <button class="abtn oui rel-log" data-nom="${esc(r.prospect)}" data-contact="${esc(r.contact)}" data-type="${r.type === "Vente" ? "Vente" : "Setting"}" data-source="${esc(r.source || "")}">Log le résultat</button>` }
         ]))
@@ -712,7 +715,7 @@ function render() {
       await navigator.clipboard.writeText(b.dataset.msg);
       const t = b.textContent; b.textContent = "Copié, colle-le en DM";
       setTimeout(() => { b.textContent = t; }, 2000);
-    } catch (_) { prompt("Copie le message :", b.dataset.msg); }
+    } catch (_) { copieManuelle(b.dataset.msg, "Copie le message"); }
   }));
   document.querySelectorAll(".rel-log").forEach(b => b.addEventListener("click", () => {
     showPage("log"); resetForm(); setType(b.dataset.type);
@@ -720,9 +723,7 @@ function render() {
     if (String(b.dataset.contact).startsWith("@")) el("inInsta").value = b.dataset.contact;
     else if (b.dataset.contact) { PENDING_TEL = b.dataset.contact; PENDING_TEL_PROSPECT = b.dataset.nom || ""; }
     if (b.dataset.source) el("inSource").value = b.dataset.source;
-    el("toast").textContent = "Pré-rempli pour la relance de " + (b.dataset.nom || "?") + " — choisis le résultat et enregistre.";
-    el("toast").style.display = "block";
-    setTimeout(() => { el("toast").style.display = "none"; }, 5000);
+    toast("Pré-rempli pour la relance de " + (b.dataset.nom || "?") + " — choisis le résultat et enregistre.");
   }));
 
   const wk = s.hebdo;
@@ -764,7 +765,7 @@ function render() {
   const dispArr = Object.entries(parCloser).sort((x, y) => y[1].length - x[1].length);
   el("dispatch").innerHTML = dispArr.length
     ? tableHTML([{ t: "Closer" }, { t: "RDV pris", n: 1 }, { t: "Temps médian de prise", n: 1 }],
-        dispArr.map(([nom2, arr]) => [{ t: esc(nom2) }, { t: arr.length, n: 1 }, { t: formatDelaiPrise(medi(arr)).replace("pris ", ""), n: 1 }]))
+        dispArr.map(([nom2, arr]) => [{ t: avi(nom2) }, { t: arr.length, n: 1 }, { t: formatDelaiPrise(medi(arr)).replace("pris ", ""), n: 1 }]))
     : `<div class="empty">Aucun RDV dispatché pris sur la période.</div>`;
 
   if (el("bilanZone")) {
@@ -777,7 +778,7 @@ function render() {
         const eq = b.dataset.bilan;
         const txt = bilanSemaine(eq, eq === "kelian" ? "Team Kélian" : "Team Mila");
         try { await navigator.clipboard.writeText(txt); const t0 = b.textContent; b.textContent = "Copié, colle-le en DM"; setTimeout(() => { b.textContent = t0; }, 2500); }
-        catch (_) { prompt("Copie le bilan :", txt); }
+        catch (_) { copieManuelle(txt, "Copie le bilan"); }
       }));
     } else el("bilanZone").innerHTML = "";
   }
@@ -802,7 +803,7 @@ function render() {
     ? tableHTML(
         [{ t: "Qui" }, { t: "Settings calés", n: 1 }, { t: "Effectués", n: 1 }, { t: "Show", n: 1 }, { t: "No-show setting", n: 1 }, { t: "No-show vente", n: 1 }, { t: "Non aboutis", n: 1 }, { t: "RDV de vente", n: 1 }, { t: "Prez faites", n: 1 }, { t: "Closings faits", n: 1 }, { t: "Closés", n: 1 }, { t: "Taux close", n: 1 }, { t: "Vendu", n: 1 }, { t: "Encaissé", n: 1 }],
         names.map(n => { const x = s.people[n]; return [
-          { t: esc(n) }, { t: x.cales, n: 1 }, { t: x.effectues, n: 1 },
+          { t: avi(n) }, { t: x.cales, n: 1 }, { t: x.effectues, n: 1 },
           { t: fmtPct(x.txShow), n: 1 }, { t: x.noShows, n: 1 }, { t: x.ventesNoShow, n: 1 }, { t: x.nonAboutis, n: 1 },
           { t: x.versVente, n: 1 }, { t: x.presFaites, n: 1 }, { t: x.ventesEff, n: 1 },
           { t: x.closes, n: 1 },
@@ -819,7 +820,7 @@ function render() {
     if (sel.dataset.reassigner) {
       if (!sel.value) return;
       try { await call("rdv_reassigner", { id: sel.dataset.reassigner, nom: sel.value }); await loadData(); }
-      catch (e) { alert(e.message); }
+      catch (e) { toast("Ça n'a pas marché : " + e.message, "err"); }
       return;
     }
     const r = RDVS.find(x => x.id === sel.dataset.rdv);
@@ -876,6 +877,84 @@ function fermeTiroir() {
   el("sideNav").classList.remove("open");
   el("navOverlay").classList.remove("on");
 }
+
+// ----- Feedback maison : toast, confirmation, copie manuelle (fin des popups navigateur) -----
+let TOAST_TIMER = null;
+function toast(msg, type, ms) {
+  let t = document.getElementById("toastG");
+  if (!t) {
+    t = document.createElement("div");
+    t.id = "toastG";
+    t.setAttribute("role", "status");
+    t.setAttribute("aria-live", "polite");
+    document.body.appendChild(t);
+  }
+  t.textContent = msg;
+  t.className = "toast-g" + (type === "err" ? " err" : "");
+  setTimeout(() => t.classList.add("on"), 10);
+  clearTimeout(TOAST_TIMER);
+  TOAST_TIMER = setTimeout(() => t.classList.remove("on"), ms || (type === "err" ? 5000 : 4000));
+}
+function confirmer(o) {
+  return new Promise(resolve => {
+    const ov = document.createElement("div");
+    ov.className = "dlg-ov";
+    ov.innerHTML = `<div class="dlg" role="alertdialog">
+      <div class="dlg-t">${esc(o.titre || "Tu confirmes ?")}</div>
+      ${o.texte ? `<div class="dlg-x">${esc(o.texte)}</div>` : ""}
+      <div class="dlg-b">
+        <button class="dlg-non">${esc(o.non || "Annuler")}</button>
+        <button class="dlg-oui${o.danger ? " danger" : ""}">${esc(o.ok || "Oui")}</button>
+      </div></div>`;
+    const fin = v => { ov.remove(); document.removeEventListener("keydown", surTouche); resolve(v); };
+    const surTouche = e2 => { if (e2.key === "Escape") fin(false); };
+    ov.querySelector(".dlg-oui").addEventListener("click", () => fin(true));
+    ov.querySelector(".dlg-non").addEventListener("click", () => fin(false));
+    ov.addEventListener("click", e2 => { if (e2.target === ov) fin(false); });
+    document.addEventListener("keydown", surTouche);
+    document.body.appendChild(ov);
+    ov.querySelector(".dlg-oui").focus();
+  });
+}
+function copieManuelle(txt, titre) {
+  const ov = document.createElement("div");
+  ov.className = "dlg-ov";
+  ov.innerHTML = `<div class="dlg">
+    <div class="dlg-t">${esc(titre || "Copie le texte")}</div>
+    <textarea readonly></textarea>
+    <div class="dlg-b"><button class="dlg-oui">Fermer</button></div></div>`;
+  ov.querySelector("textarea").value = txt;
+  ov.querySelector(".dlg-oui").addEventListener("click", () => ov.remove());
+  ov.addEventListener("click", e2 => { if (e2.target === ov) ov.remove(); });
+  document.body.appendChild(ov);
+  const ta = ov.querySelector("textarea");
+  ta.focus(); ta.select();
+}
+const eurOu = n => n ? eur(n) : '<span style="color:var(--muted)">–</span>';
+// Avatar à initiale : même personne = même couleur, partout
+function avi(nom) {
+  const n = String(nom || "?").trim() || "?";
+  let hh = 0;
+  for (const c of n) hh = (hh * 31 + c.charCodeAt(0)) % 360;
+  return `<span class="avi" style="background:hsl(${hh} 42% 26%);color:hsl(${hh} 75% 82%)">${esc(n[0].toUpperCase())}</span>${esc(n)}`;
+}
+// Overlays : verrou du scroll + fermeture au tap sur le fond
+function ouvreOverlay(ov) {
+  ov.dataset.scrollY = window.scrollY;
+  document.body.style.cssText = "position:fixed;top:-" + window.scrollY + "px;left:0;right:0";
+  ov.style.display = "";
+  if (ov.id !== "offreOverlay") ov.onclick = e2 => { if (e2.target === ov) fermeOverlay(ov); };
+}
+function fermeOverlay(ov) {
+  if (ov.style.display === "none") return;
+  ov.style.display = "none";
+  const y = Number(ov.dataset.scrollY) || 0;
+  document.body.style.cssText = "";
+  window.scrollTo(0, y);
+}
+document.addEventListener("focusin", e2 => {
+  if (e2.target.closest(".overlay-plein")) setTimeout(() => e2.target.scrollIntoView({ block: "center", behavior: "smooth" }), 300);
+});
 
 // ----- Chips : un tap au lieu d'un menu déroulant -----
 const CHIP_SELECTS = ["inResSetting", "inCause", "inResVente", "inCauseV", "inSource", "inOffreV", "inQuiPres", "inQuiClose", "inVenteMoi"];
@@ -974,11 +1053,9 @@ function prefillLog(r, resultat) {
   PENDING_RDV = r.id;
   PENDING_PROSPECT = r.prospect || "";
   PENDING_TYPE = t;
-  el("toast").textContent = resultat
+  toast(resultat
     ? "Pré-rempli pour " + (r.prospect || "?") + " (" + resultat + ") — complète s'il manque un détail et enregistre."
-    : "Pré-rempli depuis le RDV de " + (r.prospect || "?") + " — choisis le résultat et enregistre.";
-  el("toast").style.display = "block";
-  setTimeout(() => { el("toast").style.display = "none"; }, 5000);
+    : "Pré-rempli depuis le RDV de " + (r.prospect || "?") + " — choisis le résultat et enregistre.");
 }
 
 // ----- Formulaire -----
@@ -1070,12 +1147,12 @@ function resetForm() {
 async function submitForm(e) {
   e.preventDefault();
   const c = { type: TYPE, prospect: el("inProspect").value.trim() };
-  if (!c.prospect) return alert("Le prospect est obligatoire.");
+  if (!c.prospect) return toast("Le prospect est obligatoire.", "err");
   c.instagram = el("inInsta").value.trim();
   // Prospect historique identifié par téléphone : on transmet son numéro
   if (!c.instagram && PENDING_TEL && cleTxt(c.prospect) === cleTxt(PENDING_TEL_PROSPECT)) c.telephone = PENDING_TEL;
   if (!c.instagram && TYPE === "Vente" && el("inResVente").value === "Closé") {
-    if (!confirm("Pas d'Instagram : cette vente ne sera pas reliée à la fiche du prospect. Enregistrer quand même ?")) return;
+    if (!(await confirmer({ titre: "Pas d'Instagram ?", texte: "Cette vente ne sera pas reliée à la fiche du prospect.", ok: "Enregistrer quand même" }))) return;
   }
   c.source = el("inSource").value;
   c.date = el("inDate").value || todayLocal();
@@ -1084,32 +1161,32 @@ async function submitForm(e) {
     if (TYPE !== "Vente") c.qui = el("inQui").value; // pour une Vente, « Closing fait par » fait foi
     if (el("fEquipeAdmin").style.display !== "none") {
       c.equipe = el("inEquipe").value;
-      if (!c.equipe) return alert("Choisis l'équipe du call.");
+      if (!c.equipe) return toast("Choisis l'équipe du call.", "err");
     }
   }
 
   if (TYPE === "Setting") {
     c.res_setting = el("inResSetting").value;
-    if (!c.res_setting) return alert("Le résultat du setting est obligatoire.");
+    if (!c.res_setting) return toast("Le résultat du setting est obligatoire.", "err");
     if (c.res_setting === "Calé (à venir)") {
-      if (!el("inCaleLe").value) return alert("Indique quand le setting est calé.");
+      if (!el("inCaleLe").value) return toast("Indique quand le setting est calé.", "err");
       c.rdv_le = new Date(el("inCaleLe").value).toISOString();
     }
     if (c.res_setting === "No-show") {
       const dr = dateRelanceDepuis("Ns");
-      if (dr === null) return alert("Choisis la date de relance.");
+      if (dr === null) return toast("Choisis la date de relance.", "err");
       if (dr) c.date_relance = dr;
     }
     if (c.res_setting === "Non abouti") {
       c.cause = el("inCause").value;
-      if (!c.cause) return alert("La cause est obligatoire.");
+      if (!c.cause) return toast("La cause est obligatoire.", "err");
       const dr = dateRelanceDepuis("Set");
-      if (dr === null) return alert("Choisis la date de relance.");
-      if (c.cause === "À rappeler" && !dr) return alert("« À rappeler » = choisis quand le relancer.");
+      if (dr === null) return toast("Choisis la date de relance.", "err");
+      if (c.cause === "À rappeler" && !dr) return toast("« À rappeler » = choisis quand le relancer.", "err");
       if (dr) c.date_relance = dr;
     }
     if (c.res_setting === "RDV de vente calé") {
-      if (!el("inSuiteLe").value) return alert("Indique quand le RDV de vente est calé.");
+      if (!el("inSuiteLe").value) return toast("Indique quand le RDV de vente est calé.", "err");
       c.rdv_le = new Date(el("inSuiteLe").value).toISOString();
       c.fiche = el("inFiche").value.trim();
       if (el("inVenteMoi").value === "moi") c.vente_moi = true;
@@ -1121,37 +1198,37 @@ async function submitForm(e) {
   }
   if (TYPE === "Vente") {
     c.res_closing = el("inResVente").value;
-    if (!c.res_closing) return alert("Le résultat de l'appel est obligatoire.");
+    if (!c.res_closing) return toast("Le résultat de l'appel est obligatoire.", "err");
     c.qui_presentation = el("inQuiPres").value;
     c.qui = el("inQuiClose").value;
     if (c.res_closing === "Closé") {
       c.offre = el("inOffreV").value;
-      if (!el("inMontantV").value) return alert("Indique le montant total de la vente.");
+      if (!el("inMontantV").value) return toast("Indique le montant total de la vente.", "err");
       c.montant = Number(el("inMontantV").value);
       // Plus d'acomptes (10/07) : tout est comptant, l'encaissé = le montant
       c.paiement = "Comptant";
       c.encaisse = c.montant;
       // Argent pas encore arrivé (plafond bloqué...) : R2 d'encaissement au planning
       if (el("inEncaisseSel").value === "r2") {
-        if (!el("inR2Quand").value) return alert("Indique la date du R2 d'encaissement.");
+        if (!el("inR2Quand").value) return toast("Indique la date du R2 d'encaissement.", "err");
         c.r2_quand = new Date(el("inR2Quand").value).toISOString();
         c.r2_note = el("inR2Note").value.trim();
       }
     }
     if (c.res_closing === "Pas closé") {
       c.cause = el("inCauseV").value;
-      if (!c.cause) return alert("La cause est obligatoire.");
+      if (!c.cause) return toast("La cause est obligatoire.", "err");
       const dr = dateRelanceDepuis("Pc");
-      if (dr === null) return alert("Choisis la date de relance.");
+      if (dr === null) return toast("Choisis la date de relance.", "err");
       if (dr) c.date_relance = dr;
     }
     if (c.res_closing === "No-show") {
       const dr = dateRelanceDepuis("NsV");
-      if (dr === null) return alert("Choisis la date de relance.");
+      if (dr === null) return toast("Choisis la date de relance.", "err");
       if (dr) c.date_relance = dr;
     }
     if (c.res_closing === "À relancer") {
-      if (!el("inDateRelanceV").value) return alert("Indique la date de relance (sinon la relance ne sonnera jamais).");
+      if (!el("inDateRelanceV").value) return toast("Indique la date de relance (sinon la relance ne sonnera jamais).", "err");
       c.date_relance = el("inDateRelanceV").value;
       if (el("inMontantRelV").value) c.montant = Number(el("inMontantRelV").value);
     }
@@ -1159,24 +1236,25 @@ async function submitForm(e) {
     if (["Closé", "Pas closé", "À relancer"].includes(c.res_closing)) c.objection = el("inObjection").value;
   }
   el("submitBtn").disabled = true;
-  el("submitBtn").textContent = "Enregistrement…";
+  el("submitBtn").classList.add("busy");
+  el("submitBtn").textContent = "Enregistrement";
   try {
     const r = await call("log", { call: c });
     if (CLOSES_VUS && r.id) CLOSES_VUS.add(r.id); // pas de cha-ching pour sa propre saisie
     resetForm();
-    el("toast").textContent = r.rdv_erreur ? "Call enregistré, MAIS le RDV n'a pas pu être créé au planning — préviens Tony (" + r.rdv_erreur + ")."
+    let msgOk = r.rdv_erreur ? "Call enregistré, MAIS le RDV n'a pas pu être créé au planning — préviens Tony (" + r.rdv_erreur + ")."
       : !r.rdv ? "Call enregistré."
       : c.res_setting === "Calé (à venir)" ? "Call enregistré. Le setting est au planning."
       : r.rdv_statut === "confirme" ? "Call enregistré. L'appel de vente est au planning de " + (r.rdv_assigne || "?") + "."
       : "Call enregistré. Le RDV est parti au dispatch (onglet Planning).";
-    if (r.rdv_conflit) el("toast").textContent += " ATTENTION : il y a déjà un RDV " + r.rdv_conflit + " chez la même personne.";
-    el("toast").style.display = "block";
-    setTimeout(() => { el("toast").style.display = "none"; }, 4000);
+    if (r.rdv_conflit) msgOk += " Attention : il y a déjà un RDV " + r.rdv_conflit + " chez la même personne.";
+    toast(msgOk, (r.rdv_erreur || r.rdv_conflit) ? "err" : "", (r.rdv_erreur || r.rdv_conflit) ? 8000 : 4000);
     loadData();
   } catch (err) {
-    alert("Erreur : " + err.message);
+    toast("Ça n'a pas marché : " + err.message, "err");
   } finally {
     el("submitBtn").disabled = false;
+    el("submitBtn").classList.remove("busy");
     el("submitBtn").textContent = "Enregistrer";
   }
 }
@@ -1194,7 +1272,7 @@ function offrePourMoi() {
 function majOffre() {
   const r = offrePourMoi();
   const ov = el("offreOverlay");
-  if (!r) { ov.style.display = "none"; if (OFFRE_TIMER) { clearInterval(OFFRE_TIMER); OFFRE_TIMER = null; } return; }
+  if (!r) { fermeOverlay(ov); if (OFFRE_TIMER) { clearInterval(OFFRE_TIMER); OFFRE_TIMER = null; } return; }
   const cleOffre = r.id + "|" + (r.offre_depuis || "");
   if (ov.dataset.rid === cleOffre && ov.style.display !== "none") return; // déjà affichée
   const today = SalesStats.ymdLocal(new Date());
@@ -1216,7 +1294,7 @@ function majOffre() {
       </div>
       <div class="offre-plus-tard" id="offrePlusTard">Plus tard (le RDV reste dans le planning)</div>
     </div>`;
-  ov.style.display = "";
+  ouvreOverlay(ov);
   debloqueAudio();
   const fin = new Date(r.offre_depuis).getTime() + 120000;
   const tick = () => {
@@ -1238,10 +1316,10 @@ function majOffre() {
   tick();
   if (OFFRE_TIMER) clearInterval(OFFRE_TIMER);
   OFFRE_TIMER = setInterval(tick, 1000);
-  const ferme = () => { ov.style.display = "none"; if (OFFRE_TIMER) { clearInterval(OFFRE_TIMER); OFFRE_TIMER = null; } };
+  const ferme = () => { fermeOverlay(ov); if (OFFRE_TIMER) { clearInterval(OFFRE_TIMER); OFFRE_TIMER = null; } };
   el("offrePrendre").addEventListener("click", async () => {
     try { await call("rdv_accept", { id: r.id }); ferme(); await loadData(); showPage("planning"); }
-    catch (e) { alert(e.message); ferme(); loadData(); }
+    catch (e) { toast("Ça n'a pas marché : " + e.message, "err"); ferme(); loadData(); }
   });
   el("offrePasser").addEventListener("click", async () => {
     try { await call("rdv_refuse", { id: r.id }); } catch (_) {}
@@ -1264,8 +1342,8 @@ function montreFile() {
     ov.innerHTML = `<div class="offre-carte"><div class="offre-titre">File terminée</div>
       <div class="offre-infos">Toutes les relances du jour sont traitées.</div>
       <div class="offre-actions"><button class="abtn oui" id="fileFin">Fermer</button></div></div>`;
-    ov.style.display = "";
-    el("fileFin").addEventListener("click", () => { ov.style.display = "none"; loadData(); });
+    ouvreOverlay(ov);
+    el("fileFin").addEventListener("click", () => { fermeOverlay(ov); loadData(); });
     return;
   }
   const r = FILE_RELANCES[FILE_IDX];
@@ -1283,13 +1361,13 @@ function montreFile() {
       </div>
       <div class="offre-plus-tard" id="fileQuitter">Quitter la file</div>
     </div>`;
-  ov.style.display = "";
+  ouvreOverlay(ov);
   el("fileCopier").addEventListener("click", async () => {
     try { await navigator.clipboard.writeText(msgRelance(r)); el("fileCopier").textContent = "Copié, colle-le en DM"; }
-    catch (_) { prompt("Copie le message :", msgRelance(r)); }
+    catch (_) { copieManuelle(msgRelance(r), "Copie le message"); }
   });
   el("fileLog").addEventListener("click", () => {
-    ov.style.display = "none";
+    fermeOverlay(ov);
     showPage("log"); resetForm(); setType(r.type === "Vente" ? "Vente" : "Setting");
     el("inProspect").value = r.prospect === "?" ? "" : r.prospect;
     if (String(r.contact).startsWith("@")) el("inInsta").value = r.contact;
@@ -1297,7 +1375,7 @@ function montreFile() {
     if (r.source) el("inSource").value = r.source;
   });
   el("fileSuivant").addEventListener("click", () => { FILE_IDX++; montreFile(); });
-  el("fileQuitter").addEventListener("click", () => { ov.style.display = "none"; });
+  el("fileQuitter").addEventListener("click", () => { fermeOverlay(ov); });
 }
 
 // ----- Agenda : le calendrier de l'équipe (vue mois / semaine) -----
@@ -1390,16 +1468,16 @@ function montreAjoutEvenement() {
       <button class="abtn" id="evFermer">Annuler</button>
     </div>
   </div>`;
-  ov.style.display = "";
-  el("evFermer").addEventListener("click", () => { ov.style.display = "none"; });
+  ouvreOverlay(ov);
+  el("evFermer").addEventListener("click", () => { fermeOverlay(ov); });
   el("evCreer").addEventListener("click", async () => {
-    if (!el("evQuand").value) return alert("Indique la date et l'heure.");
+    if (!el("evQuand").value) return toast("Indique la date et l'heure.", "err");
     try {
       await call("rdv_perso", { quand: new Date(el("evQuand").value).toISOString(), titre: el("evTitre").value.trim() });
-      ov.style.display = "none";
+      fermeOverlay(ov);
       await loadData();
       showPage("agenda");
-    } catch (e) { alert(e.message); }
+    } catch (e) { toast("Ça n'a pas marché : " + e.message, "err"); }
   });
 }
 function montreJourAgenda(j) {
@@ -1419,11 +1497,11 @@ function montreJourAgenda(j) {
       </div>`).join("") : `<div class="sinfo">Rien ce jour-là.</div>`}
     <div class="offre-actions" style="margin-top:14px"><button class="abtn" id="agJourFermer">Fermer</button></div>
   </div>`;
-  ov.style.display = "";
-  el("agJourFermer").addEventListener("click", () => { ov.style.display = "none"; });
+  ouvreOverlay(ov);
+  el("agJourFermer").addEventListener("click", () => { fermeOverlay(ov); });
   ov.querySelectorAll("[data-evsuppr]").forEach(b => b.addEventListener("click", async () => {
-    try { await call("rdv_annule", { id: b.dataset.evsuppr }); ov.style.display = "none"; await loadData(); }
-    catch (e) { alert(e.message); }
+    try { await call("rdv_annule", { id: b.dataset.evsuppr }); fermeOverlay(ov); await loadData(); }
+    catch (e) { toast("Ça n'a pas marché : " + e.message, "err"); }
   }));
 }
 
@@ -1479,13 +1557,13 @@ function montreFiche(cle) {
         </select></div>` : ""}
     <div class="offre-actions" style="margin-top:14px"><button class="abtn" id="ficheFermer">Fermer</button></div>
   </div>`;
-  ov.style.display = "";
-  el("ficheFermer").addEventListener("click", () => { ov.style.display = "none"; });
+  ouvreOverlay(ov);
+  el("ficheFermer").addEventListener("click", () => { fermeOverlay(ov); });
   const fu = el("ficheFusion");
   if (fu) fu.addEventListener("change", async () => {
     const cible = FICHES[fu.value];
     if (!cible) return;
-    if (!confirm(`Fusionner « ${x.nom || x.contact} » dans « ${cible.nom || cible.contact} » ? Les ${miens.length} calls et ${rdvsMiens.length} RDV passeront sur le contact ${cible.contact}.`)) { fu.value = ""; return; }
+    if (!(await confirmer({ titre: `Fusionner « ${x.nom || x.contact} » dans « ${cible.nom || cible.contact} » ?`, texte: `Les ${miens.length} calls et ${rdvsMiens.length} RDV passeront sur le contact ${cible.contact}.`, ok: "Fusionner", danger: true }))) { fu.value = ""; return; }
     const cibleTel = cible.contact && !String(cible.contact).trim().startsWith("@");
     try {
       await call("fusion_prospect", {
@@ -1494,9 +1572,9 @@ function montreFiche(cle) {
         instagram: cibleTel ? "" : cible.contact,
         telephone: cibleTel ? cible.contact : "",
       });
-      ov.style.display = "none";
+      fermeOverlay(ov);
       await loadData();
-    } catch (e) { alert(e.message); fu.value = ""; }
+    } catch (e) { toast("Ça n'a pas marché : " + e.message, "err"); fu.value = ""; }
   });
 }
 
@@ -1525,15 +1603,15 @@ function montreCorrige(id) {
       <button class="abtn" id="corFermer">Annuler</button>
     </div>
   </div>`;
-  ov.style.display = "";
-  el("corFermer").addEventListener("click", () => { ov.style.display = "none"; });
+  ouvreOverlay(ov);
+  el("corFermer").addEventListener("click", () => { fermeOverlay(ov); });
   el("corSave").addEventListener("click", async () => {
     const prospect = el("corProspect").value.trim();
-    if (!prospect) return alert("Le prospect est obligatoire.");
+    if (!prospect) return toast("Le prospect est obligatoire.", "err");
     const corr = { prospect, instagram: el("corInsta").value.trim(), source: el("corSource").value, notes: el("corNotes").value.trim() };
     if (vente && el("corMontant")) corr.montant = Number(el("corMontant").value) || 0;
-    try { await call("call_update", { id, call: corr }); ov.style.display = "none"; await loadData(); }
-    catch (e) { alert(e.message); }
+    try { await call("call_update", { id, call: corr }); fermeOverlay(ov); await loadData(); }
+    catch (e) { toast("Ça n'a pas marché : " + e.message, "err"); }
   });
 }
 
@@ -1554,12 +1632,12 @@ function montreDebrief(id) {
       : `<div class="sinfo" style="white-space:pre-wrap;padding:10px;border:1px solid var(--line);border-radius:10px">${esc(r.debrief || "")}</div>
          <div class="offre-actions" style="margin-top:12px"><button class="abtn" id="dbFermer">Fermer</button></div>`}
   </div>`;
-  ov.style.display = "";
-  el("dbFermer").addEventListener("click", () => { ov.style.display = "none"; });
+  ouvreOverlay(ov);
+  el("dbFermer").addEventListener("click", () => { fermeOverlay(ov); });
   const sv = el("dbSave");
   if (sv) sv.addEventListener("click", async () => {
-    try { await call("call_debrief", { id, texte: el("dbTexte").value }); ov.style.display = "none"; await loadData(); }
-    catch (e) { alert(e.message); }
+    try { await call("call_debrief", { id, texte: el("dbTexte").value }); fermeOverlay(ov); await loadData(); }
+    catch (e) { toast("Ça n'a pas marché : " + e.message, "err"); }
   });
 }
 
@@ -1608,8 +1686,8 @@ function montreScript() {
     ${morceaux.length ? morceaux.map(([t, x]) => `<div style="margin-top:14px"><div class="stitre" style="font-size:13.5px;color:var(--accent)">${esc(t)}</div><div class="offre-infos" style="white-space:pre-wrap;margin-bottom:0">${esc(x)}</div></div>`).join("") : `<div class="offre-infos">Aucun script rempli pour l'instant. Tony peut les écrire dans Réglages, onglet Scripts.</div>`}
     <div class="offre-actions" style="margin-top:18px"><button class="abtn oui" id="scriptFermer">Fermer</button></div>
   </div>`;
-  ov.style.display = "";
-  el("scriptFermer").addEventListener("click", () => { ov.style.display = "none"; });
+  ouvreOverlay(ov);
+  el("scriptFermer").addEventListener("click", () => { fermeOverlay(ov); });
 }
 
 // ----- Réglages (admin) : rappels automatiques -----
@@ -1747,38 +1825,40 @@ async function chargeRappels() {
       const tx = sl.querySelector(".mq-taux"); if (tx) corps.taux_commission = tx.value ? Number(tx.value) / 100 : 0;
       const of2 = sl.querySelector(".mq-off"); if (of2) corps.off_jusqu_au = of2.value || null;
       try { await call("membre_maj", corps); b.textContent = "Enregistré"; setTimeout(() => chargeRappels(), 700); }
-      catch (e) { alert(e.message); }
+      catch (e) { toast("Ça n'a pas marché : " + e.message, "err"); }
     }));
     z.querySelectorAll(".mq-lien").forEach(b => b.addEventListener("click", async () => {
       try { await navigator.clipboard.writeText(lienDe(b.dataset.code)); b.textContent = "Lien copié"; setTimeout(() => { b.textContent = "Copier son lien"; }, 2000); }
-      catch (_) { prompt("Copie le lien :", lienDe(b.dataset.code)); }
+      catch (_) { copieManuelle(lienDe(b.dataset.code), "Le lien d'accès"); }
     }));
     z.querySelectorAll(".mq-regen").forEach(b => b.addEventListener("click", async () => {
       const nom = b.closest(".slot").dataset.mnom;
-      if (!confirm("Nouveau code pour " + nom + " ? Son ancien lien meurt tout de suite, il faudra lui envoyer le nouveau (et il devra réactiver ses notifs).")) return;
+      if (!(await confirmer({ titre: "Nouveau code pour " + nom + " ?", texte: "Son ancien lien meurt tout de suite, il faudra lui envoyer le nouveau (et il devra réactiver ses notifs).", ok: "Nouveau code", danger: true }))) return;
       try {
         const r = await call("membre_code_regen", { nom });
-        try { await navigator.clipboard.writeText(lienDe(r.code)); alert("Nouveau lien copié, envoie-le à " + nom + " en privé."); }
-        catch (_) { prompt("Nouveau lien de " + nom + " :", lienDe(r.code)); }
+        try { await navigator.clipboard.writeText(lienDe(r.code)); toast("Nouveau lien copié, envoie-le à " + nom + " en privé."); }
+        catch (_) { copieManuelle(lienDe(r.code), "Nouveau lien de " + nom); }
         chargeRappels();
-      } catch (e) { alert(e.message); }
+      } catch (e) { toast("Ça n'a pas marché : " + e.message, "err"); }
     }));
     z.querySelectorAll(".mq-actif").forEach(b => b.addEventListener("click", async () => {
       const nom = b.closest(".slot").dataset.mnom;
       const versActif = b.dataset.actif === "1";
-      if (!confirm(versActif ? "Réactiver l'accès de " + nom + " ?" : "Désactiver " + nom + " ? Son lien ne marchera plus et il ne recevra plus rien.")) return;
-      try { await call("membre_maj", { nom, actif: versActif }); chargeRappels(); } catch (e) { alert(e.message); }
+      if (!(await confirmer(versActif
+        ? { titre: "Réactiver l'accès de " + nom + " ?", ok: "Réactiver" }
+        : { titre: "Désactiver " + nom + " ?", texte: "Son lien ne marchera plus et il ne recevra plus rien.", ok: "Désactiver", danger: true }))) return;
+      try { await call("membre_maj", { nom, actif: versActif }); chargeRappels(); } catch (e) { toast("Ça n'a pas marché : " + e.message, "err"); }
     }));
     const nmc = el("nmCreer");
     if (nmc) nmc.addEventListener("click", async () => {
       const nom = el("nmNom").value.trim();
-      if (!nom) return alert("Le prénom est obligatoire.");
+      if (!nom) return toast("Le prénom est obligatoire.", "err");
       try {
         const r = await call("membre_ajoute", { nom, equipe: el("nmEq").value, role_vente: el("nmRolev").value, role: el("nmRole").value });
         const lien = lienDe(r.code);
         el("nmOut").innerHTML = `Créé. Son lien : <b>${esc(lien)}</b> — envoie-le en privé, un lien = une identité.`;
         try { await navigator.clipboard.writeText(lien); } catch (_) { /* affiché au-dessus */ }
-      } catch (e) { alert(e.message); }
+      } catch (e) { toast("Ça n'a pas marché : " + e.message, "err"); }
     });
     z.querySelectorAll(".prm-save").forEach(b => b.addEventListener("click", async () => {
       if (b.disabled) return;
@@ -1793,7 +1873,7 @@ async function chargeRappels() {
         if (sm) sm.textContent = sm.textContent.replace(/ · vide$/, "") + (v.trim() ? "" : " · vide");
         b.textContent = "Enregistré";
         setTimeout(() => { b.textContent = "Enregistrer"; b.disabled = false; }, 1500);
-      } catch (e) { alert(e.message); b.textContent = "Enregistrer"; b.disabled = false; }
+      } catch (e) { toast("Ça n'a pas marché : " + e.message, "err"); b.textContent = "Enregistrer"; b.disabled = false; }
     }));
     const montreTab = t => {
       RG_TAB = t;
@@ -1823,32 +1903,32 @@ async function chargeRappels() {
         } });
         b.textContent = "Enregistré";
         setTimeout(() => { b.textContent = "Enregistrer"; b.disabled = false; }, 1500);
-      } catch (e) { alert(e.message); b.textContent = "Enregistrer"; b.disabled = false; }
+      } catch (e) { toast("Ça n'a pas marché : " + e.message, "err"); b.textContent = "Enregistrer"; b.disabled = false; }
     }));
     z.querySelectorAll(".rg-del").forEach(b => b.addEventListener("click", async () => {
-      if (!confirm("Supprimer ce rappel ? Plus aucune notification de ce type ne partira.")) return;
+      if (!(await confirmer({ titre: "Supprimer ce rappel ?", texte: "Plus aucune notification de ce type ne partira.", ok: "Supprimer", danger: true }))) return;
       try { await call("rappels_delete", { id: b.closest(".slot").dataset.rid }); chargeRappels(); }
-      catch (e) { alert(e.message); }
+      catch (e) { toast("Ça n'a pas marché : " + e.message, "err"); }
     }));
     z.querySelectorAll(".nt-save").forEach(b => b.addEventListener("click", async () => {
       if (b.disabled) return;
       const sl = b.closest(".slot");
       const titre = sl.querySelector(".nt-titre").value.trim().slice(0, 80);
       const corps = sl.querySelector(".nt-corps").value.trim().slice(0, 300);
-      if (!titre || !corps) return alert("Titre et message obligatoires.");
+      if (!titre || !corps) return toast("Titre et message obligatoires.", "err");
       b.disabled = true;
       b.textContent = "Enregistrement…";
       try {
         await call("notifs_save", { cle: sl.dataset.ncle, titre, corps });
         b.textContent = "Enregistré";
         setTimeout(() => { b.textContent = "Enregistrer"; b.disabled = false; }, 1500);
-      } catch (e) { alert(e.message); b.textContent = "Enregistrer"; b.disabled = false; }
+      } catch (e) { toast("Ça n'a pas marché : " + e.message, "err"); b.textContent = "Enregistrer"; b.disabled = false; }
     }));
     z.querySelectorAll(".msg-save").forEach(b => b.addEventListener("click", async () => {
       if (b.disabled) return;
       const sl = b.closest(".slot");
       const msg = sl.querySelector(".msg-txt").value.trim().slice(0, 500);
-      if (!msg) return alert("Le message ne peut pas être vide.");
+      if (!msg) return toast("Le message ne peut pas être vide.", "err");
       b.disabled = true;
       b.textContent = "Enregistrement…";
       try {
@@ -1856,7 +1936,7 @@ async function chargeRappels() {
         MSG_SRV[sl.dataset.cat] = msg;
         b.textContent = "Enregistré";
         setTimeout(() => { b.textContent = "Enregistrer"; b.disabled = false; }, 1500);
-      } catch (e) { alert(e.message); b.textContent = "Enregistrer"; b.disabled = false; }
+      } catch (e) { toast("Ça n'a pas marché : " + e.message, "err"); b.textContent = "Enregistrer"; b.disabled = false; }
     }));
     el("rgAjout").addEventListener("click", async (ev) => {
       const b = ev.currentTarget;
@@ -1866,7 +1946,7 @@ async function chargeRappels() {
       try {
         await call("rappels_save", { rappel: { delai_min: 60, message: "Dans 1 h : {type} avec {prospect} à {heure}.", actif: true, cible: "assigne" } });
         chargeRappels();
-      } catch (e) { alert(e.message); b.disabled = false; b.textContent = "Ajouter un rappel"; }
+      } catch (e) { toast("Ça n'a pas marché : " + e.message, "err"); b.disabled = false; b.textContent = "Ajouter un rappel"; }
     });
   } catch (e) { z.innerHTML = `<div class="empty">Impossible de charger : ${esc(e.message)}</div>`; }
 }
@@ -1925,11 +2005,11 @@ async function initNotifs() {
   el("btnNotifs").addEventListener("click", async () => {
     try {
       const perm = await Notification.requestPermission();
-      if (perm !== "granted") return alert("Les notifications sont bloquées dans les réglages du navigateur.");
+      if (perm !== "granted") return toast("Les notifications sont bloquées dans les réglages du navigateur.", "err");
       const s = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToU8(VAPID_PUB) });
       await call("push_subscribe", { sub: s.toJSON() });
       initNotifs();
-    } catch (e) { alert("Activation impossible : " + e.message); }
+    } catch (e) { toast("Activation impossible : " + e.message, "err"); }
   });
 }
 
@@ -1977,10 +2057,16 @@ async function loadData() {
     majProspectsIdx();
     render();
     majOffre();
+    const sp = el("splash");
+    if (sp) sp.remove();
     el("err").style.display = "none";
   } catch (e) {
-    el("err").textContent = "Impossible de charger : " + e.message;
+    const sp1 = el("splash");
+    if (sp1) sp1.remove();
+    el("err").innerHTML = "Impossible de charger : " + esc(e.message) + ' <button class="abtn" id="errRetry" style="margin-left:10px">Réessayer</button>';
     el("err").style.display = "block";
+    const bR = el("errRetry");
+    if (bR) bR.addEventListener("click", () => { el("err").style.display = "none"; loadData(); });
     el("dot").className = "dot err";
     el("updated").textContent = "Hors ligne.";
   }
@@ -1988,6 +2074,8 @@ async function loadData() {
 
 // Écran verrouillé : on peut coller son lien (ou juste le code) pour entrer
 function brancheLock() {
+  const sp0 = el("splash");
+  if (sp0) sp0.remove();
   el("lock").style.display = "block";
   el("btnCodeLock").addEventListener("click", () => {
     const v = el("inCodeLock").value.trim();
