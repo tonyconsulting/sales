@@ -952,29 +952,20 @@ function majAvatars() {
   const u = el("uinit");
   if (u) u.innerHTML = AVATARS[MOI.nom] ? `<img src="${AVATARS[MOI.nom]}" alt="">` : esc((MOI.nom || "?")[0].toUpperCase());
 }
-// Tap sur son avatar (tiroir) : choisir / retirer sa photo
+// L'espace profil : tap sur sa carte dans le tiroir -> photo, nom, mail, téléphone
+let PROFIL_INPUT = null;
 function brancheAvatar() {
-  const u = el("uinit");
-  if (!u || MOI.role === "observateur") return;
-  u.title = "Ta photo de profil";
-  const inp = document.createElement("input");
-  inp.type = "file";
-  inp.accept = "image/*";
-  inp.style.display = "none";
-  document.body.appendChild(inp);
-  u.addEventListener("click", async () => {
-    if (AVATARS[MOI.nom]) {
-      const garde = await confirmer({ titre: "Ta photo de profil", texte: "La changer ou la retirer ?", ok: "Changer la photo", non: "Retirer la photo" });
-      if (!garde) {
-        try { await call("avatar_upload", { image: "" }); MOI.avatar = null; delete AVATARS[MOI.nom]; majAvatars(); render(); toast("Photo retirée."); }
-        catch (e) { toast("Ça n'a pas marché : " + e.message, "err"); }
-        return;
-      }
-    }
-    inp.click();
-  });
-  inp.addEventListener("change", () => {
-    const f = inp.files && inp.files[0];
+  const box = el("userbox");
+  if (!box) return;
+  box.style.cursor = "pointer";
+  box.title = "Ton profil";
+  PROFIL_INPUT = document.createElement("input");
+  PROFIL_INPUT.type = "file";
+  PROFIL_INPUT.accept = "image/*";
+  PROFIL_INPUT.style.display = "none";
+  document.body.appendChild(PROFIL_INPUT);
+  PROFIL_INPUT.addEventListener("change", () => {
+    const f = PROFIL_INPUT.files && PROFIL_INPUT.files[0];
     if (!f) return;
     const img = new Image();
     img.onload = async () => {
@@ -985,18 +976,85 @@ function brancheAvatar() {
       cx.drawImage(img, (img.width - cote) / 2, (img.height - cote) / 2, cote, cote, 0, 0, 128, 128);
       const data = c.toDataURL("image/jpeg", 0.82);
       URL.revokeObjectURL(img.src);
-      inp.value = "";
+      PROFIL_INPUT.value = "";
       try {
         await call("avatar_upload", { image: data });
         MOI.avatar = data;
         AVATARS[MOI.nom] = data;
         majAvatars();
         render();
+        const pa = el("profilAvatar");
+        if (pa) pa.innerHTML = `<img src="${data}" alt="">`;
         toast("Photo enregistrée : l'équipe te voit maintenant partout avec.");
       } catch (e) { toast("Ça n'a pas marché : " + e.message, "err"); }
     };
-    img.onerror = () => { toast("Impossible de lire cette image.", "err"); inp.value = ""; };
+    img.onerror = () => { toast("Impossible de lire cette image.", "err"); PROFIL_INPUT.value = ""; };
     img.src = URL.createObjectURL(f);
+  });
+  box.addEventListener("click", () => { fermeTiroir(); montreProfil(); });
+}
+function montreProfil() {
+  const ov = el("callOverlay");
+  const lecteur = MOI.role === "observateur";
+  const grandAvatar = AVATARS[MOI.nom]
+    ? `<img src="${AVATARS[MOI.nom]}" alt="">`
+    : `<span style="font-size:26px;font-weight:750;color:var(--accent)">${esc((MOI.nom || "?")[0].toUpperCase())}</span>`;
+  ov.innerHTML = `<div class="offre-carte" style="text-align:left;max-width:440px">
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:16px">
+      <div id="profilAvatar" title="Changer ma photo" style="width:72px;height:72px;border-radius:50%;background:var(--accent-dim);display:flex;align-items:center;justify-content:center;overflow:hidden;cursor:pointer;flex:none;border:1px solid var(--line)">${grandAvatar}</div>
+      <div>
+        <div class="offre-titre" style="font-size:19px;margin:0">${esc(MOI.nom)}${MOI.nom_famille ? " " + esc(MOI.nom_famille) : ""}</div>
+        <div class="sinfo" style="margin:2px 0 0">${esc(el("urole").textContent)}</div>
+        ${lecteur ? "" : `<button class="del" id="profilPhotoBtn" style="margin-top:4px">${AVATARS[MOI.nom] ? "Changer ou retirer la photo" : "Ajouter une photo"}</button>`}
+      </div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>Prénom (l'identité dans l'app, vois avec Tony pour le changer)</label><input value="${esc(MOI.nom)}" disabled style="opacity:.55"></div>
+      <div class="field"><label>Nom</label><input id="prfNom" maxlength="40" value="${esc(MOI.nom_famille || "")}" ${lecteur ? "disabled" : ""}></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>Email</label><input id="prfMail" type="email" maxlength="80" value="${esc(MOI.email || "")}" placeholder="prenom@exemple.com" ${lecteur ? "disabled" : ""}></div>
+      <div class="field"><label>Téléphone</label><input id="prfTel" type="tel" maxlength="25" value="${esc(MOI.telephone || "")}" placeholder="+33 6 12 34 56 78" ${lecteur ? "disabled" : ""}></div>
+    </div>
+    <div class="offre-actions">
+      ${lecteur ? "" : `<button class="abtn oui" id="prfSave">Enregistrer</button>`}
+      <button class="abtn" id="prfFermer">Fermer</button>
+    </div>
+  </div>`;
+  ouvreOverlay(ov);
+  el("prfFermer").addEventListener("click", () => fermeOverlay(ov));
+  const pa = el("profilAvatar"), pb = el("profilPhotoBtn");
+  const photoFlow = async () => {
+    if (lecteur) return;
+    if (AVATARS[MOI.nom]) {
+      const garde = await confirmer({ titre: "Ta photo de profil", texte: "La changer ou la retirer ?", ok: "Changer la photo", non: "Retirer la photo" });
+      if (!garde) {
+        try {
+          await call("avatar_upload", { image: "" });
+          MOI.avatar = null;
+          delete AVATARS[MOI.nom];
+          majAvatars();
+          render();
+          pa.innerHTML = `<span style="font-size:26px;font-weight:750;color:var(--accent)">${esc((MOI.nom || "?")[0].toUpperCase())}</span>`;
+          toast("Photo retirée.");
+        } catch (e) { toast("Ça n'a pas marché : " + e.message, "err"); }
+        return;
+      }
+    }
+    PROFIL_INPUT.click();
+  };
+  pa.addEventListener("click", photoFlow);
+  if (pb) pb.addEventListener("click", photoFlow);
+  const sv = el("prfSave");
+  if (sv) sv.addEventListener("click", async () => {
+    try {
+      await call("profil_maj", { nom_famille: el("prfNom").value.trim(), email: el("prfMail").value.trim(), telephone: el("prfTel").value.trim() });
+      MOI.nom_famille = el("prfNom").value.trim() || null;
+      MOI.email = el("prfMail").value.trim() || null;
+      MOI.telephone = el("prfTel").value.trim() || null;
+      fermeOverlay(ov);
+      toast("Profil enregistré.");
+    } catch (e) { toast("Ça n'a pas marché : " + e.message, "err"); }
   });
 }
 // Overlays : verrou du scroll + fermeture au tap sur le fond
@@ -2145,6 +2203,7 @@ async function chargeRappels() {
           <div class="field"><label>Équipe</label>${pilule(IC_REG.qui, `<select class="mq-eq"><option value="kelian"${m.equipe === "kelian" ? " selected" : ""}>Team Kélian</option><option value="mila"${m.equipe === "mila" ? " selected" : ""}>Team Mila</option></select>`)}</div>
           <div class="field"><label>Commission (% de l'encaissé, vide = pas affichée)</label>${pilule(IC_REG.temps, `<input type="number" class="mq-taux" min="0" max="99" step="1" value="${m.taux_commission ? Math.round(m.taux_commission * 100) : ""}">`)}</div>
         </div>`}
+        ${m.nom_famille || m.email || m.telephone ? `<div class="sinfo" style="margin-bottom:10px">${[m.nom_famille ? esc(m.nom + " " + m.nom_famille) : "", m.email ? esc(m.email) : "", m.telephone ? esc(m.telephone) : ""].filter(Boolean).join(" · ")}</div>` : ""}
         <div class="field"><label>Off jusqu'au (inclus, vide = dispo)</label>${pilule(IC_REG.temps, `<input type="date" class="mq-off" value="${esc(m.off_jusqu_au || "")}">`)}</div>
         <div class="abtns">
           <button class="abtn oui mq-save">Enregistrer</button>
