@@ -379,7 +379,8 @@
 
   /* Le carrousel d'affiches de l'accueil */
   .caro { position:relative; border-radius:16px; overflow:hidden; margin-bottom:18px; aspect-ratio:16/6; border:1px solid var(--line); background:var(--cardbg); }
-  @media (max-width:700px) { .caro { aspect-ratio:16/9; } }
+  @media (max-width:700px) { .caro { aspect-ratio:4/3; } }
+  .caro-s.portrait { background-size:contain; background-repeat:no-repeat; background-color:#1d1436; }
   .caro-s { position:absolute; inset:0; opacity:0; transition:opacity .5s ease; background-size:cover; background-position:center; display:flex; align-items:flex-end; }
   .caro-s.on { opacity:1; }
   .caro-s.txt { background:linear-gradient(135deg, #2a1c54 0%, #131020 70%); align-items:center; justify-content:center; text-align:center; }
@@ -790,7 +791,7 @@
   </main>
 </div>
 
-<script src="stats.js?v=34"></script>
-<script src="app.js?v=34"></script>
+<script src="stats.js?v=35"></script>
+<script src="app.js?v=35"></script>
 </body>
 </html>
