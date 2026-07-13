@@ -10,7 +10,7 @@ try {
 // Clé PUBLIQUE de signature des notifications (la privée est côté serveur)
 const VAPID_PUB = "BBefpGJrlJu2jhuahy0XnidzpnE5nfZ84kRh3YueXISXD036WLlbQu50vebuJcKKiF05xz5Cj_C__Qa8wc_YWNQ";
 
-let MOI = null, EQUIPE = [], RECORDS = [], RDVS = [], CORBEILLE = [], PROSPECT_FILTRE = "", FICHES = {}, SERVER_OFFSET = 0, OFFRES_VUES = new Set(), FILE_RELANCES = [], FILE_IDX = 0, PERIOD = "1j", TYPE = "Setting", PLANFILTRE = "tous", PLANTYPE = "tous", AGENDA_MODE = "mois", AGENDA_REF = Date.now(), VUEQUIPE = "toutes", VUEMOI = "equipe", PENDING_RDV = null, PENDING_PROSPECT = "", PENDING_TYPE = "", PENDING_TEL = "", PENDING_TEL_PROSPECT = "";
+let MOI = null, EQUIPE = [], RECORDS = [], RDVS = [], CORBEILLE = [], ANNONCES = [], CARO_IDX = 0, CARO_TIMER = null, PROSPECT_FILTRE = "", FICHES = {}, SERVER_OFFSET = 0, OFFRES_VUES = new Set(), FILE_RELANCES = [], FILE_IDX = 0, PERIOD = "1j", TYPE = "Setting", PLANFILTRE = "tous", PLANTYPE = "tous", AGENDA_MODE = "mois", AGENDA_REF = Date.now(), VUEQUIPE = "toutes", VUEMOI = "equipe", PENDING_RDV = null, PENDING_PROSPECT = "", PENDING_TYPE = "", PENDING_TEL = "", PENDING_TEL_PROSPECT = "";
 const NOM_EQUIPE = { kelian: "Team Kélian", mila: "Team Mila" };
 const voitTout = () => MOI && (MOI.role === "admin" || MOI.role === "observateur");
 const chipEquipe = e => (voitTout() && e) ? `<span class="pill ${e === "mila" ? "teamM" : "teamK"}" title="${NOM_EQUIPE[e] || e}">${e === "mila" ? "M" : "K"}</span> ` : "";
@@ -815,6 +815,7 @@ function render() {
   renderPlanning(s.today);
   renderAgenda();
   renderJeu(s);
+  renderAnnonces();
 
   // Menus « Résultat… » rapides (table prospects + retards du planning)
   document.querySelectorAll(".quickres").forEach(sel => sel.addEventListener("change", async () => {
@@ -1806,6 +1807,44 @@ const tempsRelatif = t => {
   return "il y a " + Math.round(min / 1440) + " j";
 };
 
+function renderAnnonces() {
+  const z = el("annoncesZone");
+  if (!z) return;
+  if (!ANNONCES.length) { z.innerHTML = ""; if (CARO_TIMER) { clearInterval(CARO_TIMER); CARO_TIMER = null; } return; }
+  if (CARO_IDX >= ANNONCES.length) CARO_IDX = 0;
+  z.innerHTML = `<div class="caro" id="caro">
+    ${ANNONCES.map((an, i) => `
+      <div class="caro-s${an.image ? "" : " txt"}${i === CARO_IDX ? " on" : ""}" data-i="${i}" ${an.image ? `style="background-image:url(${an.image})"` : ""}>
+        ${an.titre || an.texte ? `<div class="caro-v">${an.titre ? `<div class="caro-t">${esc(an.titre)}</div>` : ""}${an.texte ? `<div class="caro-x">${esc(an.texte)}</div>` : ""}</div>` : ""}
+      </div>`).join("")}
+    ${ANNONCES.length > 1 ? `<div class="caro-dots">${ANNONCES.map((_, i) => `<i data-d="${i}" class="${i === CARO_IDX ? "on" : ""}"></i>`).join("")}</div>` : ""}
+  </div>`;
+  const montre = i => {
+    CARO_IDX = i;
+    z.querySelectorAll(".caro-s").forEach(s2 => s2.classList.toggle("on", Number(s2.dataset.i) === i));
+    z.querySelectorAll(".caro-dots i").forEach(d2 => d2.classList.toggle("on", Number(d2.dataset.d) === i));
+  };
+  z.querySelectorAll(".caro-dots i").forEach(d2 => d2.addEventListener("click", e2 => { e2.stopPropagation(); montre(Number(d2.dataset.d)); }));
+  const caro = el("caro");
+  caro.addEventListener("click", () => {
+    const an = ANNONCES[CARO_IDX];
+    if (an && an.lien) window.open(an.lien, "_blank", "noopener");
+  });
+  if (an0Lien()) caro.dataset.lien = "1";
+  function an0Lien() { return ANNONCES.some(an => an.lien); }
+  // glissement du doigt
+  let x0 = null;
+  caro.addEventListener("touchstart", e2 => { x0 = e2.touches[0].clientX; }, { passive: true });
+  caro.addEventListener("touchend", e2 => {
+    if (x0 === null) return;
+    const dx = e2.changedTouches[0].clientX - x0;
+    if (Math.abs(dx) > 40) montre((CARO_IDX + (dx < 0 ? 1 : ANNONCES.length - 1)) % ANNONCES.length);
+    x0 = null;
+  }, { passive: true });
+  if (CARO_TIMER) clearInterval(CARO_TIMER);
+  if (ANNONCES.length > 1) CARO_TIMER = setInterval(() => montre((CARO_IDX + 1) % ANNONCES.length), 5000);
+}
+
 let CLASSEMENT_MODE = "semaine";
 function renderJeu(s) {
   if (!el("classementZone")) return;
@@ -2322,6 +2361,25 @@ async function chargeRappels() {
         </div>
       </details>
       <details class="slot regl">
+        <summary>Affiches de l'accueil${ANNONCES.length ? " · " + ANNONCES.length + " en ligne" : " · aucune"}</summary>
+        <div class="sinfo" style="margin-bottom:10px;color:var(--muted)">Le carrousel en haut du dashboard de toute l'équipe : l'affiche d'un call, le voyage à gagner, un événement. Avec image, ou juste un titre sur fond violet. 6 max.</div>
+        ${ANNONCES.map(an => `
+        <div class="sinfo" style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--line)">
+          ${an.image ? `<img src="${an.image}" style="width:64px;height:36px;object-fit:cover;border-radius:6px;flex:none">` : `<span style="width:64px;height:36px;border-radius:6px;background:var(--accent-dim);display:inline-flex;align-items:center;justify-content:center;color:var(--accent);font-size:10px;flex:none">texte</span>`}
+          <span style="flex:1">${esc(an.titre || an.texte || "(sans titre)")}</span>
+          <button class="abtn non an-suppr" data-aid="${an.id}">Retirer</button>
+        </div>`).join("")}
+        <div class="row2" style="margin-top:12px">
+          <div class="field"><label>Titre</label><input id="anTitre" maxlength="80" placeholder="ex : Call d'équipe jeudi 19h"></div>
+          <div class="field"><label>Texte (optionnel)</label><input id="anTexte" maxlength="200" placeholder="ex : le voyage à Dubaï se joue ce mois-ci"></div>
+        </div>
+        <div class="row2">
+          <div class="field"><label>Lien au tap (optionnel, https)</label><input id="anLien" maxlength="300" placeholder="https://..."></div>
+          <div class="field"><label>Affiche (optionnelle)</label><input type="file" id="anImage" accept="image/*"></div>
+        </div>
+        <div class="abtns"><button class="abtn oui" id="anPublier">Publier l'affiche</button></div>
+      </details>
+      <details class="slot regl">
         <summary>Le barème des XP (lecture seule)</summary>
         <div class="sinfo" style="line-height:2">
           Setting calé : ${XP.setting_cale} XP · Setting effectué : ${XP.setting_show} XP · RDV de vente calé : ${XP.rdv_vente_cale} XP<br>
@@ -2350,6 +2408,43 @@ async function chargeRappels() {
           chargeRappels();
         } catch (e) { toast("Ça n'a pas marché : " + e.message, "err"); }
       });
+      const litAffiche = () => new Promise((resolve, reject) => {
+        const f = el("anImage").files && el("anImage").files[0];
+        if (!f) return resolve("");
+        const img = new Image();
+        img.onload = () => {
+          const w = Math.min(1280, img.width);
+          const hR = Math.round(img.height * (w / img.width));
+          const c = document.createElement("canvas");
+          c.width = w; c.height = hR;
+          c.getContext("2d").drawImage(img, 0, 0, w, hR);
+          URL.revokeObjectURL(img.src);
+          resolve(c.toDataURL("image/jpeg", 0.8));
+        };
+        img.onerror = () => reject(new Error("image illisible"));
+        img.src = URL.createObjectURL(f);
+      });
+      el("anPublier").addEventListener("click", async () => {
+        try {
+          const image = await litAffiche();
+          await call("annonce_ajoute", { titre: el("anTitre").value.trim(), texte: el("anTexte").value.trim(), lien: el("anLien").value.trim(), image });
+          const cfg2 = await call("config");
+          ANNONCES = cfg2.annonces || [];
+          toast("Affiche publiée : elle défile sur le dashboard de toute l'équipe.");
+          render();
+          chargeRappels();
+        } catch (e) { toast("Ça n'a pas marché : " + e.message, "err"); }
+      });
+      z.querySelectorAll(".an-suppr").forEach(b => b.addEventListener("click", async () => {
+        if (!(await confirmer({ titre: "Retirer cette affiche ?", ok: "Retirer", danger: true }))) return;
+        try {
+          await call("annonce_supprime", { id: b.dataset.aid });
+          const cfg2 = await call("config");
+          ANNONCES = cfg2.annonces || [];
+          render();
+          chargeRappels();
+        } catch (e) { toast("Ça n'a pas marché : " + e.message, "err"); }
+      }));
       const ds = el("defiStop");
       if (ds) ds.addEventListener("click", async () => {
         try {
@@ -2638,6 +2733,7 @@ async function init() {
     MOI = cfg.moi; EQUIPE = cfg.equipe || [];
     MSG_SRV = cfg.messages || {};
     PARAMS = cfg.parametres || {};
+    ANNONCES = cfg.annonces || [];
   } catch (e) {
     brancheLock();
     el("lockMsg").textContent = e.message === "code invalide"
