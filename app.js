@@ -936,12 +936,68 @@ function copieManuelle(txt, titre) {
   ta.focus(); ta.select();
 }
 const eurOu = n => n ? eur(n) : '<span style="color:var(--muted)">–</span>';
-// Avatar à initiale : même personne = même couleur, partout
+// Avatar : photo de profil si elle existe, sinon initiale colorée (même personne = même couleur)
+let AVATARS = {};
 function avi(nom) {
   const n = String(nom || "?").trim() || "?";
+  if (AVATARS[n]) return `<img class="avi" src="${AVATARS[n]}" alt="">${esc(n)}`;
   let hh = 0;
   for (const c of n) hh = (hh * 31 + c.charCodeAt(0)) % 360;
   return `<span class="avi" style="background:hsl(${hh} 42% 26%);color:hsl(${hh} 75% 82%)">${esc(n[0].toUpperCase())}</span>${esc(n)}`;
+}
+function majAvatars() {
+  AVATARS = {};
+  (EQUIPE || []).forEach(m => { if (m.avatar) AVATARS[m.nom] = m.avatar; });
+  if (MOI && MOI.avatar) AVATARS[MOI.nom] = MOI.avatar;
+  const u = el("uinit");
+  if (u) u.innerHTML = AVATARS[MOI.nom] ? `<img src="${AVATARS[MOI.nom]}" alt="">` : esc((MOI.nom || "?")[0].toUpperCase());
+}
+// Tap sur son avatar (tiroir) : choisir / retirer sa photo
+function brancheAvatar() {
+  const u = el("uinit");
+  if (!u || MOI.role === "observateur") return;
+  u.title = "Ta photo de profil";
+  const inp = document.createElement("input");
+  inp.type = "file";
+  inp.accept = "image/*";
+  inp.style.display = "none";
+  document.body.appendChild(inp);
+  u.addEventListener("click", async () => {
+    if (AVATARS[MOI.nom]) {
+      const garde = await confirmer({ titre: "Ta photo de profil", texte: "La changer ou la retirer ?", ok: "Changer la photo", non: "Retirer la photo" });
+      if (!garde) {
+        try { await call("avatar_upload", { image: "" }); MOI.avatar = null; delete AVATARS[MOI.nom]; majAvatars(); render(); toast("Photo retirée."); }
+        catch (e) { toast("Ça n'a pas marché : " + e.message, "err"); }
+        return;
+      }
+    }
+    inp.click();
+  });
+  inp.addEventListener("change", () => {
+    const f = inp.files && inp.files[0];
+    if (!f) return;
+    const img = new Image();
+    img.onload = async () => {
+      const c = document.createElement("canvas");
+      c.width = 128; c.height = 128;
+      const cx = c.getContext("2d");
+      const cote = Math.min(img.width, img.height);
+      cx.drawImage(img, (img.width - cote) / 2, (img.height - cote) / 2, cote, cote, 0, 0, 128, 128);
+      const data = c.toDataURL("image/jpeg", 0.82);
+      URL.revokeObjectURL(img.src);
+      inp.value = "";
+      try {
+        await call("avatar_upload", { image: data });
+        MOI.avatar = data;
+        AVATARS[MOI.nom] = data;
+        majAvatars();
+        render();
+        toast("Photo enregistrée : l'équipe te voit maintenant partout avec.");
+      } catch (e) { toast("Ça n'a pas marché : " + e.message, "err"); }
+    };
+    img.onerror = () => { toast("Impossible de lire cette image.", "err"); inp.value = ""; };
+    img.src = URL.createObjectURL(f);
+  });
 }
 // Overlays : verrou du scroll + fermeture au tap sur le fond
 function ouvreOverlay(ov) {
@@ -2463,6 +2519,8 @@ async function init() {
   el("hello").textContent = "Salut " + MOI.nom;
   el("userbox").style.display = "";
   el("uinit").textContent = (MOI.nom || "?")[0].toUpperCase();
+  majAvatars();
+  brancheAvatar();
   el("unom").textContent = MOI.nom;
   el("urole").textContent = MOI.role === "admin" ? "Head of sales" : MOI.role === "observateur" ? "Observateur" : (MOI.role_vente || "membre");
   if (MOI.role === "observateur") {
