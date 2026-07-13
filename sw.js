@@ -1,5 +1,7 @@
 // Service worker du site sales : reçoit les notifications push.
 self.addEventListener("push", (e) => {
+  // Pastille sur l'icône : quelque chose t'attend (compte précis posé à l'ouverture)
+  try { if (self.navigator && "setAppBadge" in self.navigator) self.navigator.setAppBadge(); } catch (_) { /* pas grave */ }
   let d = {};
   try { d = e.data ? e.data.json() : {}; } catch (_) {}
   e.waitUntil(self.registration.showNotification(d.title || "Kairós", {
