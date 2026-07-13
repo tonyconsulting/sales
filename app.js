@@ -1807,6 +1807,15 @@ const tempsRelatif = t => {
   return "il y a " + Math.round(min / 1440) + " j";
 };
 
+function montreAffichePlein(an) {
+  const ov = el("callOverlay");
+  ov.innerHTML = `<div style="max-width:min(92vw, 520px);max-height:88vh;display:flex;flex-direction:column;gap:10px">
+    <img src="${an.image}" alt="" style="max-width:100%;max-height:80vh;object-fit:contain;border-radius:14px;border:1px solid var(--line)">
+    <button class="abtn" id="affFermer" style="align-self:center">Fermer</button>
+  </div>`;
+  ouvreOverlay(ov);
+  el("affFermer").addEventListener("click", () => fermeOverlay(ov));
+}
 function renderAnnonces() {
   const z = el("annoncesZone");
   if (!z) return;
@@ -1844,7 +1853,9 @@ function renderAnnonces() {
   const caro = el("caro");
   caro.addEventListener("click", () => {
     const an = ANNONCES[CARO_IDX];
-    if (an && an.lien) window.open(an.lien, "_blank", "noopener");
+    if (!an) return;
+    if (an.lien) return window.open(an.lien, "_blank", "noopener");
+    if (an.image) montreAffichePlein(an);
   });
   if (an0Lien()) caro.dataset.lien = "1";
   function an0Lien() { return ANNONCES.some(an => an.lien); }
@@ -2429,24 +2440,13 @@ async function chargeRappels() {
         if (!f) return resolve("");
         const img = new Image();
         img.onload = () => {
-          const portrait = img.height > img.width * 1.05;
+          // l'affiche reste telle quelle : juste redimensionnée (max 1280) et compressée
           const c = document.createElement("canvas");
           const cx = c.getContext("2d");
-          if (portrait) {
-            // affiche verticale : posée entière au centre d'une carte 16/9 violette
-            c.width = 1280; c.height = 720;
-            const grad = cx.createLinearGradient(0, 0, 1280, 720);
-            grad.addColorStop(0, "#2a1c54");
-            grad.addColorStop(1, "#131020");
-            cx.fillStyle = grad;
-            cx.fillRect(0, 0, 1280, 720);
-            const hI = 720, wI = Math.round(img.width * (hI / img.height));
-            cx.drawImage(img, Math.round((1280 - wI) / 2), 0, wI, hI);
-          } else {
-            const w = Math.min(1280, img.width);
-            c.width = w; c.height = Math.round(img.height * (w / img.width));
-            cx.drawImage(img, 0, 0, c.width, c.height);
-          }
+          const k = Math.min(1, 1280 / Math.max(img.width, img.height));
+          c.width = Math.round(img.width * k);
+          c.height = Math.round(img.height * k);
+          cx.drawImage(img, 0, 0, c.width, c.height);
           URL.revokeObjectURL(img.src);
           // compression progressive : on descend la qualité jusqu'à passer sous la limite
           let data = "";
