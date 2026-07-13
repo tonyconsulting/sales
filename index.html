@@ -359,7 +359,10 @@
   @keyframes spin { to { transform:rotate(360deg); } }
 
   /* Avatars à initiales */
-  .avi { display:inline-flex; width:20px; height:20px; border-radius:99px; align-items:center; justify-content:center; font-size:10px; font-weight:700; margin-right:6px; vertical-align:-5px; flex:none; }
+  .avi { display:inline-flex; width:20px; height:20px; border-radius:99px; align-items:center; justify-content:center; font-size:10px; font-weight:700; margin-right:6px; vertical-align:-5px; flex:none; overflow:hidden; }
+  img.avi { object-fit:cover; border:1px solid var(--line); }
+  #uinit { overflow:hidden; position:relative; cursor:pointer; }
+  #uinit img { width:100%; height:100%; object-fit:cover; border-radius:inherit; }
 
   /* Pills : point d'état intégré + variantes */
   .pill.green { background:#123326; color:#34d399; }
@@ -769,7 +772,7 @@
   </main>
 </div>
 
-<script src="stats.js?v=30"></script>
-<script src="app.js?v=30"></script>
+<script src="stats.js?v=31"></script>
+<script src="app.js?v=31"></script>
 </body>
 </html>
