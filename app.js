@@ -1628,6 +1628,27 @@ function montreJourAgenda(j) {
 const XP = { setting_cale: 10, setting_show: 15, rdv_vente_cale: 25, vente_faite: 20, vente_closee: 100, presentation: 30, encaissement: 150, relance_honoree: 8, dispatch_rapide: 15 };
 const RANGS = [["Légende KNE", 12000], ["Machine", 5000], ["Pointure", 2000], ["Régulier", 750], ["Setter", 250], ["Rookie", 0]];
 const rangDe = xp => RANGS.find(([, seuil]) => xp >= seuil)[0];
+function prochainRang(xp) {
+  const asc = RANGS.slice().reverse();
+  for (let i = 0; i < asc.length; i++) {
+    if (xp < asc[i][1]) {
+      const [nomR, seuil] = asc[i];
+      const plancher = i > 0 ? asc[i - 1][1] : 0;
+      return { nom: nomR, seuil, manque: seuil - xp, pct: Math.round((xp - plancher) / (seuil - plancher) * 100) };
+    }
+  }
+  return null; // Légende KNE : rang max
+}
+const MISSIONS_JOUR = [
+  { id: "j1", periode: "jour", txt: "Logge 3 calls", but: 3, val: j => j.callsJour, xp: 15 },
+  { id: "j2", periode: "jour", txt: "Cale 1 setting ou 1 RDV de vente", but: 1, val: j => j.calesJour, xp: 10 },
+  { id: "j3", periode: "jour", txt: "Honore 1 relance", but: 1, val: j => j.relHonJour, xp: 10 },
+];
+const MISSIONS_SEM = [
+  { id: "s1", periode: "semaine", txt: "10 calls loggés", but: 10, val: j => j.callsSem, xp: 25 },
+  { id: "s2", periode: "semaine", txt: "3 settings effectués", but: 3, val: j => j.showsSem, xp: 25 },
+  { id: "s3", periode: "semaine", txt: "1 vente closée", but: 1, val: j => j.closesSem, xp: 40 },
+];
 const IC_ECLAIR = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z"/></svg>';
 function calculeJeu() {
   const F = SalesStats.F;
@@ -1641,7 +1662,8 @@ function calculeJeu() {
   const debutSemPrec = SalesStats.ymdLocal(lundiPrec);
   const debutMois = today.slice(0, 8) + "01";
   const J = {};
-  const joueur = n => J[n] || (J[n] = { xpTotal: 0, xpSemaine: 0, xpMois: 0, xpSemPrec: 0, jours: new Set(), grosseVente: 0, encParSemaine: {}, serie: 0, serieMax: 0 });
+  const joueur = n => J[n] || (J[n] = { xpTotal: 0, xpSemaine: 0, xpMois: 0, xpSemPrec: 0, jours: new Set(), grosseVente: 0, encParSemaine: {}, serie: 0, serieMax: 0,
+    callsJour: 0, callsSem: 0, calesJour: 0, showsSem: 0, closesSem: 0, relHonJour: 0 });
   const semaineDe = d => {
     const x = new Date(d + "T12:00:00");
     x.setDate(x.getDate() - ((x.getDay() + 6) % 7));
@@ -1668,16 +1690,24 @@ function calculeJeu() {
     const qui = f[F.qui], quiPres = f[F.quiPres];
     if (qui) joueur(qui).jours.add(d);
     if (quiPres) joueur(quiPres).jours.add(d);
+    if (qui) {
+      const j0 = joueur(qui);
+      if (d === today) j0.callsJour++;
+      if (d >= debutSemaine) j0.callsSem++;
+    }
     if (type === "Setting") {
       const res = f[F.resSetting];
       if (res === "Calé (à venir)") crediter(qui, d, XP.setting_cale);
       else if (res === "Non abouti") crediter(qui, d, XP.setting_show);
       else if (res === "RDV de vente calé") crediter(qui, d, XP.rdv_vente_cale);
+      if (qui && d === today && (res === "Calé (à venir)" || res === "RDV de vente calé")) joueur(qui).calesJour++;
+      if (qui && d >= debutSemaine && (res === "Non abouti" || res === "RDV de vente calé")) joueur(qui).showsSem++;
     } else if (type === "Vente" || type === "Prez" || type === "Closing") {
       const res = f[F.resClosing] || f[F.resPres];
       if (res && res !== "No-show") crediter(qui, d, XP.vente_faite);
       if (res === "Closé") {
         crediter(qui, d, XP.vente_closee);
+        if (qui && d >= debutSemaine) joueur(qui).closesSem++;
         if (quiPres && quiPres !== qui) crediter(quiPres, d, XP.presentation);
         const m = Number(f[F.montant]) || 0;
         if (m > joueur(qui).grosseVente) joueur(qui).grosseVente = m;
@@ -1700,6 +1730,7 @@ function calculeJeu() {
         if (ecart >= 0 && ecart <= 1 && !relancesVues.has(cle2)) {
           relancesVues.add(cle2);
           crediter(qui, d, XP.relance_honoree);
+          if (d === today) joueur(qui).relHonJour++;
         }
       });
     }
@@ -1743,6 +1774,16 @@ function calculeJeu() {
     });
     j.serieMax = Math.max(max, j.serie);
   });
+  // missions du jour / de la semaine : auto-vérifiées, le bonus compte dans le classement
+  Object.values(J).forEach(j => {
+    j.missions = MISSIONS_JOUR.concat(MISSIONS_SEM).map(m => {
+      const fait = Math.min(m.but, m.val(j));
+      const ok = fait >= m.but;
+      if (ok) { j.xpSemaine += m.xp; j.xpMois += m.xp; }
+      return { ...m, fait, ok };
+    });
+  });
+
   // le mur des ventes : l'argent qui vient de tomber
   const mur = recs.filter(r => {
     const f = r.fields;
@@ -1796,6 +1837,28 @@ function renderJeu(s) {
       <div class="gbar"><i class="${gagne ? "ok" : ""}" style="width:${pct}%"></i></div>
     </div>`;
   } else dz.innerHTML = "";
+  // --- Tes missions (auto-vérifiées, le bonus compte dans le classement)
+  const mz0 = el("missionsZone");
+  const moiJ0 = jeu.joueurs[MOI.nom];
+  if (MOI.role !== "observateur" && moiJ0 && moiJ0.missions) {
+    const ligneM = m => `<div style="padding:6px 0">
+      <div style="display:flex;justify-content:space-between;align-items:center;font-size:13px">
+        <span>${esc(m.txt)}${m.ok ? ` <span class="pill green" style="margin-left:6px">fait</span>` : ""}</span>
+        <span style="color:${m.ok ? "#34d399" : "var(--muted)"};font-weight:650">${m.ok ? "+" + m.xp + " XP" : m.fait + " / " + m.but + " · " + m.xp + " XP"}</span>
+      </div>
+      <div class="gbar" style="height:6px;margin:5px 0 0"><i class="${m.ok ? "ok" : ""}" style="width:${Math.round(m.fait / m.but * 100)}%"></i></div>
+    </div>`;
+    const mJour = moiJ0.missions.filter(m => m.periode === "jour");
+    const mSem = moiJ0.missions.filter(m => m.periode === "semaine");
+    const faites = moiJ0.missions.filter(m => m.ok).length;
+    mz0.innerHTML = `<div class="pzone" style="margin-top:16px">
+      <h3><span class="kdot" style="background:var(--warn)"></span>Tes missions<span class="knb">${faites} / ${moiJ0.missions.length}</span></h3>
+      <div class="sinfo" style="font-size:11px;text-transform:uppercase;letter-spacing:.1em;margin:4px 0 0">Aujourd'hui</div>
+      ${mJour.map(ligneM).join("")}
+      <div class="sinfo" style="font-size:11px;text-transform:uppercase;letter-spacing:.1em;margin:10px 0 0">Cette semaine</div>
+      ${mSem.map(ligneM).join("")}
+    </div>`;
+  } else mz0.innerHTML = "";
   // --- Objectif du mois (engagement public)
   const oz = el("objectifZone");
   const encaisseDuMois = nom => {
@@ -1872,6 +1935,14 @@ function renderJeu(s) {
         <span>Série record<br><b style="font-size:16px">${moiJ.serieMax || 0} jours</b></span>
         <span>Rang<br><b style="font-size:16px;color:var(--accent)">${rangDe(moiJ.xpTotal)}</b></span>
       </div>
+      ${(() => {
+        const p = prochainRang(moiJ.xpTotal);
+        if (!p) return `<div class="sinfo" style="margin-top:12px">Rang maximum atteint. Légende, tout simplement.</div>`;
+        return `<div style="margin-top:12px">
+          <div style="display:flex;justify-content:space-between;font-size:12.5px"><span style="color:var(--muted)">Prochain rang : <b style="color:var(--ink)">${p.nom}</b></span><span style="color:var(--muted)">encore ${p.manque.toLocaleString("fr-FR")} XP</span></div>
+          <div class="gbar"><i style="width:${p.pct}%"></i></div>
+        </div>`;
+      })()}
     </div>`;
   } else rz.innerHTML = "";
   // --- Le mur des ventes
