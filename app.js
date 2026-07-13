@@ -1776,6 +1776,8 @@ function calculeJeu() {
     j.serieMax = Math.max(max, j.serie);
   });
   // missions du jour / de la semaine : auto-vérifiées, le bonus compte dans le classement
+  // (chacun a sa fiche même à zéro : les missions s'affichent dès le premier jour)
+  if (MOI && MOI.role !== "observateur") joueur(MOI.nom);
   Object.values(J).forEach(j => {
     j.missions = MISSIONS_JOUR.concat(MISSIONS_SEM).map(m => {
       const fait = Math.min(m.but, m.val(j));
