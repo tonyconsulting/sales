@@ -1824,6 +1824,22 @@ function renderAnnonces() {
     z.querySelectorAll(".caro-s").forEach(s2 => s2.classList.toggle("on", Number(s2.dataset.i) === i));
     z.querySelectorAll(".caro-dots i").forEach(d2 => d2.classList.toggle("on", Number(d2.dataset.d) === i));
   };
+  // une affiche verticale s'affiche entière sur fond violet (pas de recadrage sauvage)
+  ANNONCES.forEach((an, i) => {
+    if (!an.image) return;
+    if (an._portrait === undefined) {
+      const im = new Image();
+      im.onload = () => {
+        an._portrait = im.height > im.width * 1.05;
+        const sl = z.querySelector(`.caro-s[data-i="${i}"]`);
+        if (sl && an._portrait) sl.classList.add("portrait");
+      };
+      im.src = an.image;
+    } else if (an._portrait) {
+      const sl = z.querySelector(`.caro-s[data-i="${i}"]`);
+      if (sl) sl.classList.add("portrait");
+    }
+  });
   z.querySelectorAll(".caro-dots i").forEach(d2 => d2.addEventListener("click", e2 => { e2.stopPropagation(); montre(Number(d2.dataset.d)); }));
   const caro = el("caro");
   caro.addEventListener("click", () => {
@@ -2413,13 +2429,33 @@ async function chargeRappels() {
         if (!f) return resolve("");
         const img = new Image();
         img.onload = () => {
-          const w = Math.min(1280, img.width);
-          const hR = Math.round(img.height * (w / img.width));
+          const portrait = img.height > img.width * 1.05;
           const c = document.createElement("canvas");
-          c.width = w; c.height = hR;
-          c.getContext("2d").drawImage(img, 0, 0, w, hR);
+          const cx = c.getContext("2d");
+          if (portrait) {
+            // affiche verticale : posée entière au centre d'une carte 16/9 violette
+            c.width = 1280; c.height = 720;
+            const grad = cx.createLinearGradient(0, 0, 1280, 720);
+            grad.addColorStop(0, "#2a1c54");
+            grad.addColorStop(1, "#131020");
+            cx.fillStyle = grad;
+            cx.fillRect(0, 0, 1280, 720);
+            const hI = 720, wI = Math.round(img.width * (hI / img.height));
+            cx.drawImage(img, Math.round((1280 - wI) / 2), 0, wI, hI);
+          } else {
+            const w = Math.min(1280, img.width);
+            c.width = w; c.height = Math.round(img.height * (w / img.width));
+            cx.drawImage(img, 0, 0, c.width, c.height);
+          }
           URL.revokeObjectURL(img.src);
-          resolve(c.toDataURL("image/jpeg", 0.8));
+          // compression progressive : on descend la qualité jusqu'à passer sous la limite
+          let data = "";
+          for (const q of [0.8, 0.65, 0.5, 0.38]) {
+            data = c.toDataURL("image/jpeg", q);
+            if (data.length <= 380000) break;
+          }
+          if (data.length > 380000) return reject(new Error("cette image reste trop lourde, choisis-en une plus simple"));
+          resolve(data);
         };
         img.onerror = () => reject(new Error("image illisible"));
         img.src = URL.createObjectURL(f);
@@ -2685,6 +2721,15 @@ async function loadData() {
     RECORDS = (d.calls || []).map(adapt);
     RDVS = d.rdvs || [];
     CORBEILLE = d.corbeille || [];
+    // les affiches ont changé côté serveur ? on recharge la config (images incluses)
+    const idsServeur = (d.annonce_ids || []).join(",");
+    const idsLocaux = ANNONCES.map(x => x.id).join(",");
+    if (idsServeur !== idsLocaux) {
+      try {
+        const cfg2 = await call("config");
+        ANNONCES = cfg2.annonces || [];
+      } catch (_) { /* au prochain passage */ }
+    }
     if (d.maintenant) SERVER_OFFSET = new Date(d.maintenant).getTime() - Date.now();
     // Nouvelle vente closée par quelqu'un d'autre depuis le dernier chargement ?
     const Fx = SalesStats.F;
