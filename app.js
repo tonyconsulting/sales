@@ -814,6 +814,7 @@ function render() {
 
   renderPlanning(s.today);
   renderAgenda();
+  renderJeu(s);
 
   // Menus « Résultat… » rapides (table prospects + retards du planning)
   document.querySelectorAll(".quickres").forEach(sel => sel.addEventListener("change", async () => {
@@ -854,6 +855,10 @@ function render() {
   // Pastille de la cloche (mobile) : RDV à traiter + relances
   const nbPlan = el("bPlan").style.display === "none" ? 0 : (parseInt(el("bPlan").textContent, 10) || 0);
   const nbCloche = nbPlan + (s.matin.relancesAFaire || 0);
+  // Pastille sur l'icône de l'app (iOS 16.4+, Android)
+  if ("setAppBadge" in navigator) {
+    try { nbCloche ? navigator.setAppBadge(nbCloche) : navigator.clearAppBadge(); } catch (_) { /* pas grave */ }
+  }
   el("bellDot").textContent = nbCloche;
   el("bellDot").style.display = nbCloche ? "flex" : "none";
 
@@ -1505,6 +1510,296 @@ function montreJourAgenda(j) {
   }));
 }
 
+// ----- Le jeu : XP, rangs, séries, records (calculé depuis les calls vérifiés, intrichable) -----
+const XP = { setting_cale: 10, setting_show: 15, rdv_vente_cale: 25, vente_faite: 20, vente_closee: 100, presentation: 30, encaissement: 150, relance_honoree: 8, dispatch_rapide: 15 };
+const RANGS = [["Légende KNE", 12000], ["Machine", 5000], ["Pointure", 2000], ["Régulier", 750], ["Setter", 250], ["Rookie", 0]];
+const rangDe = xp => RANGS.find(([, seuil]) => xp >= seuil)[0];
+const IC_ECLAIR = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z"/></svg>';
+function calculeJeu() {
+  const F = SalesStats.F;
+  const recs = (!voitTout() || VUEQUIPE === "toutes") ? RECORDS : RECORDS.filter(r => r.equipe === VUEQUIPE);
+  const aujourdHui = new Date();
+  const today = SalesStats.ymdLocal(aujourdHui);
+  const lundi = new Date(aujourdHui); lundi.setHours(12, 0, 0, 0);
+  lundi.setDate(lundi.getDate() - ((lundi.getDay() + 6) % 7));
+  const debutSemaine = SalesStats.ymdLocal(lundi);
+  const lundiPrec = new Date(lundi); lundiPrec.setDate(lundiPrec.getDate() - 7);
+  const debutSemPrec = SalesStats.ymdLocal(lundiPrec);
+  const debutMois = today.slice(0, 8) + "01";
+  const J = {};
+  const joueur = n => J[n] || (J[n] = { xpTotal: 0, xpSemaine: 0, xpMois: 0, xpSemPrec: 0, jours: new Set(), grosseVente: 0, encParSemaine: {}, serie: 0, serieMax: 0 });
+  const semaineDe = d => {
+    const x = new Date(d + "T12:00:00");
+    x.setDate(x.getDate() - ((x.getDay() + 6) % 7));
+    return SalesStats.ymdLocal(x);
+  };
+  const crediter = (nom, d, xp) => {
+    if (!nom || !d) return;
+    const j = joueur(nom);
+    j.xpTotal += xp;
+    if (d >= debutSemaine) j.xpSemaine += xp;
+    else if (d >= debutSemPrec) j.xpSemPrec += xp;
+    if (d >= debutMois) j.xpMois += xp;
+  };
+  const relancesParCle = {};
+  recs.forEach(r => {
+    const f = r.fields, dr = f[F.relance] ? String(f[F.relance]).slice(0, 10) : "";
+    if (!dr) return;
+    const k = SalesStats.keyOf(r);
+    if (k) (relancesParCle[k] = relancesParCle[k] || []).push(dr);
+  });
+  const relancesVues = new Set();
+  recs.forEach(r => {
+    const f = r.fields, d = SalesStats.dateOf(r), type = f[F.type];
+    const qui = f[F.qui], quiPres = f[F.quiPres];
+    if (qui) joueur(qui).jours.add(d);
+    if (quiPres) joueur(quiPres).jours.add(d);
+    if (type === "Setting") {
+      const res = f[F.resSetting];
+      if (res === "Calé (à venir)") crediter(qui, d, XP.setting_cale);
+      else if (res === "Non abouti") crediter(qui, d, XP.setting_show);
+      else if (res === "RDV de vente calé") crediter(qui, d, XP.rdv_vente_cale);
+    } else if (type === "Vente" || type === "Prez" || type === "Closing") {
+      const res = f[F.resClosing] || f[F.resPres];
+      if (res && res !== "No-show") crediter(qui, d, XP.vente_faite);
+      if (res === "Closé") {
+        crediter(qui, d, XP.vente_closee);
+        if (quiPres && quiPres !== qui) crediter(quiPres, d, XP.presentation);
+        const m = Number(f[F.montant]) || 0;
+        if (m > joueur(qui).grosseVente) joueur(qui).grosseVente = m;
+      }
+    }
+    // l'argent réellement arrivé (comptant direct ou R2/paiement) : le jackpot
+    const enc = Number(f[F.encaisse]) || 0;
+    if (enc > 0 && qui) {
+      crediter(qui, d, XP.encaissement);
+      const sm = semaineDe(d);
+      const j = joueur(qui);
+      j.encParSemaine[sm] = (j.encParSemaine[sm] || 0) + enc;
+    }
+    // relance honorée : un call sur un prospect dont la relance tombait ce jour-là (à ±1 j)
+    const k = SalesStats.keyOf(r);
+    if (k && qui && (type === "Setting" || type === "Vente")) {
+      (relancesParCle[k] || []).forEach(dr => {
+        const ecart = (new Date(d + "T12:00:00") - new Date(dr + "T12:00:00")) / 86400000;
+        const cle2 = k + "|" + dr;
+        if (ecart >= 0 && ecart <= 1 && !relancesVues.has(cle2)) {
+          relancesVues.add(cle2);
+          crediter(qui, d, XP.relance_honoree);
+        }
+      });
+    }
+  });
+  // dispatch éclair : RDV pris en moins de 2 minutes
+  rdvsVisibles().forEach(rv => {
+    if (rv.pris_en_s && rv.pris_en_s <= 120 && rv.assigne_a) {
+      crediter(rv.assigne_a, jourLocal(rv.offre_premiere || rv.quand), XP.dispatch_rapide);
+    }
+  });
+  // séries : jours ouvrés consécutifs avec au moins un call (le week-end ne casse rien,
+  // et le jour en cours sans call ne casse pas non plus)
+  Object.values(J).forEach(j => {
+    let d = new Date(aujourdHui); d.setHours(12, 0, 0, 0);
+    let serie = 0, premier = true;
+    for (let i = 0; i < 120; i++) {
+      const ymd = SalesStats.ymdLocal(d);
+      const we = [0, 6].includes(d.getDay());
+      if (!we) {
+        if (j.jours.has(ymd)) serie++;
+        else if (premier) { /* aujourd'hui pas encore joué : on ne casse pas */ }
+        else break;
+        premier = false;
+      }
+      d.setDate(d.getDate() - 1);
+    }
+    j.serie = serie;
+    // série record (balayage complet)
+    const tous = [...j.jours].sort();
+    let max = 0, cur = 0, prec = null;
+    tous.forEach(ymd => {
+      const dt = new Date(ymd + "T12:00:00");
+      if ([0, 6].includes(dt.getDay())) return;
+      if (prec) {
+        let attendu = new Date(prec + "T12:00:00");
+        do { attendu.setDate(attendu.getDate() + 1); } while ([0, 6].includes(attendu.getDay()));
+        cur = SalesStats.ymdLocal(attendu) === ymd ? cur + 1 : 1;
+      } else cur = 1;
+      if (cur > max) max = cur;
+      prec = ymd;
+    });
+    j.serieMax = Math.max(max, j.serie);
+  });
+  // le mur des ventes : l'argent qui vient de tomber
+  const mur = recs.filter(r => {
+    const f = r.fields;
+    return (Number(f[F.encaisse]) || 0) > 0 || (f[F.resClosing] || f[F.resPres]) === "Closé";
+  }).sort((p, q) => String(q.createdTime || "").localeCompare(String(p.createdTime || ""))).slice(0, 6)
+    .map(r => ({
+      qui: r.fields[F.qui] || "?",
+      prospect: r.fields[F.prospect] || "?",
+      montant: Number(r.fields[F.encaisse]) || Number(r.fields[F.montant]) || 0,
+      encaisse: (Number(r.fields[F.encaisse]) || 0) > 0,
+      quand: r.createdTime || "",
+    }));
+  return { joueurs: J, mur, debutSemaine };
+}
+const tempsRelatif = t => {
+  if (!t) return "";
+  const min = Math.round((Date.now() - new Date(t).getTime()) / 60000);
+  if (min < 60) return "il y a " + Math.max(1, min) + " min";
+  if (min < 1440) return "il y a " + Math.round(min / 60) + " h";
+  return "il y a " + Math.round(min / 1440) + " j";
+};
+
+let CLASSEMENT_MODE = "semaine";
+function renderJeu(s) {
+  if (!el("classementZone")) return;
+  const jeu = calculeJeu();
+  const nomsEquipe = new Set(EQUIPE.map(m => m.nom).concat(MOI.role === "admin" ? [MOI.nom] : []));
+  // --- Défi de la semaine (configuré dans Réglages > Jeu)
+  const dz = el("defiZone");
+  const cible = Number(PARAMS.defi_cible) || 0;
+  const defiActif = cible > 0 && PARAMS.defi_depuis === jeu.debutSemaine;
+  if (defiActif) {
+    const F2 = SalesStats.F;
+    const eqOk = r => (PARAMS.defi_equipe || "toutes") === "toutes" || r.equipe === PARAMS.defi_equipe;
+    const semOk = r => SalesStats.dateOf(r) >= jeu.debutSemaine;
+    const recsDefi = RECORDS.filter(r => eqOk(r) && semOk(r));
+    const METRIQUES = {
+      settings_cales: ["settings calés", r => r.fields[F2.resSetting] === "Calé (à venir)" ? 1 : 0],
+      shows: ["settings effectués", r => ["Non abouti", "RDV de vente calé"].includes(r.fields[F2.resSetting]) ? 1 : 0],
+      rdv_vente: ["RDV de vente calés", r => r.fields[F2.resSetting] === "RDV de vente calé" ? 1 : 0],
+      ventes_closees: ["ventes closées", r => (r.fields[F2.resClosing] || r.fields[F2.resPres]) === "Closé" ? 1 : 0],
+      encaisse: ["euros encaissés", r => Number(r.fields[F2.encaisse]) || 0],
+    };
+    const [lbl, compte] = METRIQUES[PARAMS.defi_metric] || METRIQUES.ventes_closees;
+    const fait = recsDefi.reduce((t2, r) => t2 + compte(r), 0);
+    const pct = Math.min(100, Math.round(fait / cible * 100));
+    const gagne = fait >= cible;
+    dz.innerHTML = `<div class="pzone" style="margin-top:16px">
+      <h3><span class="kdot" style="background:${gagne ? "#34d399" : "var(--warn)"}"></span>Défi de la semaine${PARAMS.defi_equipe && PARAMS.defi_equipe !== "toutes" ? " — Team " + (PARAMS.defi_equipe === "kelian" ? "Kélian" : "Mila") : ""}<span class="knb">${gagne ? "réussi" : pct + " %"}</span></h3>
+      <div class="sinfo">${PARAMS.defi_metric === "encaisse" ? eur(fait) + " / " + eur(cible) : fait + " / " + cible} ${esc(lbl)}${PARAMS.defi_reco ? (gagne ? " — " + esc(PARAMS.defi_reco) + ", c'est gagné" : " — à la clé : " + esc(PARAMS.defi_reco)) : ""}</div>
+      <div class="gbar"><i class="${gagne ? "ok" : ""}" style="width:${pct}%"></i></div>
+    </div>`;
+  } else dz.innerHTML = "";
+  // --- Objectif du mois (engagement public)
+  const oz = el("objectifZone");
+  const encaisseDuMois = nom => {
+    const F2 = SalesStats.F;
+    const debutMois = s.today.slice(0, 8) + "01";
+    return RECORDS.filter(r => r.fields[F2.qui] === nom && SalesStats.dateOf(r) >= debutMois && SalesStats.dateOf(r) <= s.today.slice(0, 8) + "31")
+      .reduce((t2, r) => t2 + (Number(r.fields[F2.encaisse]) || 0), 0);
+  };
+  const barreObjectif = m => {
+    if (!m.objectif_mois) return "";
+    const fait = encaisseDuMois(m.nom);
+    const pct = Math.min(100, Math.round(fait / m.objectif_mois * 100));
+    return `<div style="padding:7px 0">
+      <div style="display:flex;justify-content:space-between;font-size:13px"><span>${avi(m.nom)}</span><span>${eur(fait)} / ${eur(m.objectif_mois)}</span></div>
+      <div class="gbar"><i class="${pct >= 100 ? "ok" : "or"}" style="width:${pct}%"></i></div>
+    </div>`;
+  };
+  if (MOI.role === "observateur") { oz.innerHTML = ""; }
+  else if (VUEMOI === "moi" || MOI.role !== "admin") {
+    const fait = encaisseDuMois(MOI.nom);
+    const obj = MOI.objectif_mois;
+    oz.innerHTML = `<div class="pzone" style="margin-top:16px">
+      <h3><span class="kdot" style="background:var(--gold)"></span>Ton objectif du mois<span class="knb"><button class="del" id="objBtn">${obj ? "Modifier" : "Définir"}</button></span></h3>
+      ${obj ? `<div class="sinfo">${eur(fait)} encaissés sur ${eur(obj)} déclarés${fait >= obj ? " — objectif atteint" : ""}</div>
+      <div class="gbar"><i class="${fait >= obj ? "ok" : "or"}" style="width:${Math.min(100, Math.round(fait / obj * 100))}%"></i></div>`
+      : `<div class="sinfo">Déclare ton objectif d'encaissé : ce qu'on annonce devant l'équipe, on le tient.</div>`}
+    </div>`;
+    const ob = el("objBtn");
+    if (ob) ob.addEventListener("click", montreObjectif);
+  } else {
+    const avecObj = EQUIPE.filter(m => m.objectif_mois && (VUEQUIPE === "toutes" || m.equipe === VUEQUIPE));
+    oz.innerHTML = avecObj.length ? `<div class="pzone" style="margin-top:16px">
+      <h3><span class="kdot" style="background:var(--gold)"></span>Objectifs du mois<span class="knb">${avecObj.length}</span></h3>
+      ${avecObj.map(barreObjectif).join("")}
+    </div>` : "";
+  }
+  // --- Classement
+  const cz = el("classementZone");
+  const joueurs = Object.entries(jeu.joueurs)
+    .filter(([nom]) => nomsEquipe.has(nom))
+    .map(([nom, j]) => ({ nom, ...j }))
+    .sort((p, q) => (CLASSEMENT_MODE === "semaine" ? q.xpSemaine - p.xpSemaine : q.xpMois - p.xpMois));
+  const avecPoints = joueurs.filter(j => j.xpTotal > 0);
+  cz.innerHTML = avecPoints.length ? `<div class="pzone" style="margin-top:16px">
+    <h3><span class="kdot" style="background:var(--accent)"></span>${CLASSEMENT_MODE === "semaine" ? "Classement de la semaine" : "Saison de " + MOIS_NOMS[new Date().getMonth()]}
+      <span class="knb"><span class="agseg" style="padding:3px">
+        <button data-cl="semaine" ${CLASSEMENT_MODE === "semaine" ? 'class="active"' : ""} style="padding:5px 12px;font-size:12px">Semaine</button>
+        <button data-cl="mois" ${CLASSEMENT_MODE === "mois" ? 'class="active"' : ""} style="padding:5px 12px;font-size:12px">Saison</button>
+      </span></span></h3>
+    ${joueurs.map((j, i) => {
+      const xp = CLASSEMENT_MODE === "semaine" ? j.xpSemaine : j.xpMois;
+      const delta = CLASSEMENT_MODE === "semaine" && j.xpSemPrec > 0 && j.xpSemaine > j.xpSemPrec
+        ? Math.round((j.xpSemaine - j.xpSemPrec) / j.xpSemPrec * 100) : 0;
+      return `<div class="clig">
+        <span class="cpos ${i === 0 ? "p1" : i === 1 ? "p2" : i === 2 ? "p3" : ""}">${i + 1}</span>
+        <span>${avi(j.nom)}<span class="crang">${rangDe(j.xpTotal)} · ${j.xpTotal.toLocaleString("fr-FR")} XP au total</span></span>
+        ${j.serie >= 2 ? `<span class="cserie">${IC_ECLAIR}${j.serie} j</span>` : ""}
+        ${delta > 0 && i >= 3 ? `<span class="cdelta">+${delta} % vs ta semaine passée</span>` : ""}
+        <span class="cxp">${xp.toLocaleString("fr-FR")} XP</span>
+      </div>`;
+    }).join("")}
+  </div>` : "";
+  cz.querySelectorAll("[data-cl]").forEach(b => b.addEventListener("click", () => { CLASSEMENT_MODE = b.dataset.cl; render(); }));
+  // --- Records perso (vue Moi)
+  const rz = el("recordsZone");
+  const moiJ = jeu.joueurs[MOI.nom];
+  if (VUEMOI === "moi" && moiJ) {
+    const meilleureSem = Math.max(0, ...Object.values(moiJ.encParSemaine));
+    rz.innerHTML = `<div class="pzone" style="margin-top:16px">
+      <h3><span class="kdot" style="background:#60a5fa"></span>Tes records</h3>
+      <div class="sinfo" style="display:flex;gap:22px;flex-wrap:wrap">
+        <span>Plus grosse vente<br><b style="color:var(--gold);font-size:16px">${moiJ.grosseVente ? eur(moiJ.grosseVente) : "à écrire"}</b></span>
+        <span>Meilleure semaine (encaissé)<br><b style="color:var(--gold);font-size:16px">${meilleureSem ? eur(meilleureSem) : "à écrire"}</b></span>
+        <span>Série record<br><b style="font-size:16px">${moiJ.serieMax || 0} jours</b></span>
+        <span>Rang<br><b style="font-size:16px;color:var(--accent)">${rangDe(moiJ.xpTotal)}</b></span>
+      </div>
+    </div>`;
+  } else rz.innerHTML = "";
+  // --- Le mur des ventes
+  const mz = el("murZone");
+  mz.innerHTML = jeu.mur.length ? `<div class="pzone" style="margin-top:16px">
+    <h3><span class="kdot" style="background:#34d399"></span>Le mur des ventes</h3>
+    ${jeu.mur.map(v => `<div class="mur-l">
+      <span>${avi(v.qui)}</span>
+      <span class="mur-t">${v.encaisse ? "a encaissé" : "a closé"} · ${esc(v.prospect)} · ${tempsRelatif(v.quand)}</span>
+      <span class="mur-m">${eur(v.montant)}</span>
+    </div>`).join("")}
+  </div>` : "";
+  // le rang dans le tiroir de profil
+  if (moiJ) el("urole").textContent = (MOI.role === "admin" ? "Head of sales" : MOI.role === "observateur" ? "Observateur" : (MOI.role_vente || "membre")) + " · " + rangDe(moiJ.xpTotal);
+}
+function montreObjectif() {
+  const ov = document.createElement("div");
+  ov.className = "dlg-ov";
+  ov.innerHTML = `<div class="dlg">
+    <div class="dlg-t">Ton objectif d'encaissé du mois</div>
+    <div class="dlg-x">Visible par l'équipe : ce qu'on déclare, on le tient.</div>
+    <div class="field"><input type="number" id="objMontant" min="0" step="100" placeholder="ex : 10000" value="${MOI.objectif_mois || ""}" style="font-size:16px"></div>
+    <div class="dlg-b" style="margin-top:14px">
+      <button class="dlg-non">Annuler</button>
+      <button class="dlg-oui">Je m'engage</button>
+    </div></div>`;
+  ov.querySelector(".dlg-non").addEventListener("click", () => ov.remove());
+  ov.addEventListener("click", e2 => { if (e2.target === ov) ov.remove(); });
+  ov.querySelector(".dlg-oui").addEventListener("click", async () => {
+    const montant = Number(ov.querySelector("#objMontant").value) || 0;
+    try {
+      await call("membre_objectif", { montant });
+      MOI.objectif_mois = montant || null;
+      ov.remove();
+      render();
+      toast(montant ? "Objectif déclaré : " + eur(montant) + ". L'équipe le voit, à toi de jouer." : "Objectif retiré.");
+    } catch (e) { toast("Ça n'a pas marché : " + e.message, "err"); }
+  });
+  document.body.appendChild(ov);
+  ov.querySelector("#objMontant").focus();
+}
+
 // ----- Fiche prospect : tout l'historique avant de rappeler -----
 function montreFiche(cle) {
   const x = FICHES[cle];
@@ -1711,6 +2006,7 @@ async function chargeRappels() {
         <button class="rg-tab" data-tab="messages">Messages prospects</button>
         <button class="rg-tab" data-tab="scripts">Scripts</button>
         ${MEMBRES.length ? `<button class="rg-tab" data-tab="equipe">Équipe</button>` : ""}
+        ${MEMBRES.length ? `<button class="rg-tab" data-tab="jeu">Jeu</button>` : ""}
       </div>
       <div class="rg-pan" id="pan-alertes">
       <div class="sinfo" style="margin-bottom:14px;color:var(--muted)">Les textes des alertes envoyées à l'équipe. Touche une ligne pour la modifier, les balises se remplissent toutes seules.</div>` +
@@ -1816,6 +2112,69 @@ async function chargeRappels() {
         <div class="sinfo" id="nmOut" style="margin-top:8px"></div>
       </details>
       </div>`);
+    if (MEMBRES.length) {
+      const panJeu = document.createElement("div");
+      panJeu.className = "rg-pan";
+      panJeu.id = "pan-jeu";
+      panJeu.style.display = "none";
+      const M_OPTS = [["ventes_closees", "Ventes closées"], ["encaisse", "Euros encaissés"], ["settings_cales", "Settings calés"], ["shows", "Settings effectués"], ["rdv_vente", "RDV de vente calés"]];
+      panJeu.innerHTML = `
+      <div class="sinfo" style="margin-bottom:14px;color:var(--muted)">Le défi collectif de la semaine (lundi-dimanche). L'équipe voit la barre sur son dashboard ; à toi d'honorer la récompense.</div>
+      <details class="slot regl" open>
+        <summary>Défi de la semaine${Number(PARAMS.defi_cible) > 0 ? "" : " · aucun en cours"}</summary>
+        <div class="row2">
+          <div class="field"><label>On compte quoi ?</label>${pilule(IC_REG.cond, `<select id="defiMetric">${M_OPTS.map(([v, l2]) => `<option value="${v}"${(PARAMS.defi_metric || "ventes_closees") === v ? " selected" : ""}>${l2}</option>`).join("")}</select>`)}</div>
+          <div class="field"><label>Cible de la semaine</label>${pilule(IC_REG.temps, `<input type="number" id="defiCible" min="0" value="${PARAMS.defi_cible || ""}">`)}</div>
+        </div>
+        <div class="row2">
+          <div class="field"><label>Récompense (tu l'honores en vrai)</label><input id="defiReco" maxlength="80" value="${esc(PARAMS.defi_reco || "")}" placeholder="ex : resto d'équipe"></div>
+          <div class="field"><label>Pour qui ?</label>${pilule(IC_REG.qui, `<select id="defiEq"><option value="toutes"${(PARAMS.defi_equipe || "toutes") === "toutes" ? " selected" : ""}>Les deux équipes</option><option value="kelian"${PARAMS.defi_equipe === "kelian" ? " selected" : ""}>Team Kélian</option><option value="mila"${PARAMS.defi_equipe === "mila" ? " selected" : ""}>Team Mila</option></select>`)}</div>
+        </div>
+        <div class="abtns">
+          <button class="abtn oui" id="defiGo">Lancer pour la semaine en cours</button>
+          ${Number(PARAMS.defi_cible) > 0 ? `<button class="abtn non" id="defiStop">Arrêter le défi</button>` : ""}
+        </div>
+      </details>
+      <details class="slot regl">
+        <summary>Le barème des XP (lecture seule)</summary>
+        <div class="sinfo" style="line-height:2">
+          Setting calé : ${XP.setting_cale} XP · Setting effectué : ${XP.setting_show} XP · RDV de vente calé : ${XP.rdv_vente_cale} XP<br>
+          Appel de vente tenu : ${XP.vente_faite} XP · Vente closée : ${XP.vente_closee} XP · Présentation (si 2 personnes) : ${XP.presentation} XP<br>
+          Argent encaissé : ${XP.encaissement} XP (le jackpot : personne ne gagne tant que le cash n'est pas là)<br>
+          Relance faite à l'heure : ${XP.relance_honoree} XP · RDV pris en moins de 2 min au dispatch : ${XP.dispatch_rapide} XP<br>
+          Rangs : ${RANGS.slice().reverse().map(([r2, s2]) => r2 + " (" + s2.toLocaleString("fr-FR") + ")").join(" · ")}
+        </div>
+      </details>`;
+      z.appendChild(panJeu);
+      const lundiCourant = () => {
+        const d = new Date(); d.setHours(12, 0, 0, 0);
+        d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+        return SalesStats.ymdLocal(d);
+      };
+      el("defiGo").addEventListener("click", async () => {
+        const cible = Number(el("defiCible").value) || 0;
+        if (!cible) return toast("Indique une cible.", "err");
+        try {
+          for (const [cle, val] of [["defi_metric", el("defiMetric").value], ["defi_cible", String(cible)], ["defi_reco", el("defiReco").value.trim()], ["defi_equipe", el("defiEq").value], ["defi_depuis", lundiCourant()]]) {
+            await call("params_save", { cle, valeur: val });
+            PARAMS[cle] = val;
+          }
+          toast("Défi lancé : l'équipe voit la barre sur son dashboard.");
+          render();
+          chargeRappels();
+        } catch (e) { toast("Ça n'a pas marché : " + e.message, "err"); }
+      });
+      const ds = el("defiStop");
+      if (ds) ds.addEventListener("click", async () => {
+        try {
+          await call("params_save", { cle: "defi_cible", valeur: "0" });
+          PARAMS.defi_cible = "0";
+          toast("Défi arrêté.");
+          render();
+          chargeRappels();
+        } catch (e) { toast("Ça n'a pas marché : " + e.message, "err"); }
+      });
+    }
     z.querySelectorAll(".mq-save").forEach(b => b.addEventListener("click", async () => {
       const sl = b.closest(".slot");
       const corps = { nom: sl.dataset.mnom };
