@@ -563,6 +563,8 @@
               <div class="field"><label>Relance</label>
                 <select id="inRelSet">
                   <option value="">Pas de relance</option>
+                  <option value="0">Aujourd'hui</option>
+                  <option value="1">Demain</option>
                   <option value="3">Dans 3 jours</option>
                   <option value="7">Dans 1 semaine</option>
                   <option value="14">Dans 2 semaines</option>
@@ -577,6 +579,8 @@
               <div class="field"><label>Relance</label>
                 <select id="inRelNs">
                   <option value="">Pas de relance</option>
+                  <option value="0" selected>Aujourd'hui</option>
+                  <option value="1">Demain</option>
                   <option value="3">Dans 3 jours</option>
                   <option value="7">Dans 1 semaine</option>
                   <option value="14">Dans 2 semaines</option>
@@ -636,6 +640,8 @@
               <div class="field"><label>Relance</label>
                 <select id="inRelPc">
                   <option value="">Pas de relance</option>
+                  <option value="0">Aujourd'hui</option>
+                  <option value="1">Demain</option>
                   <option value="3">Dans 3 jours</option>
                   <option value="7">Dans 1 semaine</option>
                   <option value="14">Dans 2 semaines</option>
@@ -650,6 +656,8 @@
               <div class="field"><label>Relance</label>
                 <select id="inRelNsV">
                   <option value="">Pas de relance</option>
+                  <option value="0" selected>Aujourd'hui</option>
+                  <option value="1">Demain</option>
                   <option value="3">Dans 3 jours</option>
                   <option value="7">Dans 1 semaine</option>
                   <option value="14">Dans 2 semaines</option>
@@ -799,6 +807,10 @@
       <div class="tscroll" id="objections"></div>
       <h2>Dispatch — vitesse de prise des RDV</h2>
       <div class="tscroll" id="dispatch"></div>
+      <h2>Show selon le délai de calage</h2>
+      <div class="tscroll" id="showDelai"></div>
+      <h2>R2 — qui encaisse vraiment</h2>
+      <div class="tscroll" id="r2Closer"></div>
     </section>
 
     <div class="foot">
@@ -807,7 +819,7 @@
   </main>
 </div>
 
-<script src="stats.js?v=41"></script>
-<script src="app.js?v=41"></script>
+<script src="stats.js?v=42"></script>
+<script src="app.js?v=42"></script>
 </body>
 </html>
