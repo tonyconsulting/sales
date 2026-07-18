@@ -816,7 +816,6 @@ function render() {
   renderPlanning(s.today);
   renderAgenda();
   renderJeu(s);
-  renderAnnonces();
   renderProspection(s);
 
   // Menus « Résultat… » rapides (table prospects + retards du planning)
@@ -2000,71 +1999,6 @@ const tempsRelatif = t => {
   return "il y a " + Math.round(min / 1440) + " j";
 };
 
-function montreAffichePlein(an) {
-  const ov = el("callOverlay");
-  ov.innerHTML = `<div style="max-width:min(92vw, 520px);max-height:88vh;display:flex;flex-direction:column;gap:10px">
-    <img src="${an.image}" alt="" style="max-width:100%;max-height:80vh;object-fit:contain;border-radius:14px;border:1px solid var(--line)">
-    <button class="abtn" id="affFermer" style="align-self:center">Fermer</button>
-  </div>`;
-  ouvreOverlay(ov);
-  el("affFermer").addEventListener("click", () => fermeOverlay(ov));
-}
-function renderAnnonces() {
-  const z = el("annoncesZone");
-  if (!z) return;
-  if (!ANNONCES.length) { z.innerHTML = ""; if (CARO_TIMER) { clearInterval(CARO_TIMER); CARO_TIMER = null; } return; }
-  if (CARO_IDX >= ANNONCES.length) CARO_IDX = 0;
-  z.innerHTML = `<div class="caro" id="caro">
-    ${ANNONCES.map((an, i) => `
-      <div class="caro-s${an.image ? "" : " txt"}${i === CARO_IDX ? " on" : ""}" data-i="${i}" ${an.image ? `style="background-image:url(${an.image})"` : ""}>
-        ${an.titre || an.texte ? `<div class="caro-v">${an.titre ? `<div class="caro-t">${esc(an.titre)}</div>` : ""}${an.texte ? `<div class="caro-x">${esc(an.texte)}</div>` : ""}</div>` : ""}
-      </div>`).join("")}
-    ${ANNONCES.length > 1 ? `<div class="caro-dots">${ANNONCES.map((_, i) => `<i data-d="${i}" class="${i === CARO_IDX ? "on" : ""}"></i>`).join("")}</div>` : ""}
-  </div>`;
-  const montre = i => {
-    CARO_IDX = i;
-    z.querySelectorAll(".caro-s").forEach(s2 => s2.classList.toggle("on", Number(s2.dataset.i) === i));
-    z.querySelectorAll(".caro-dots i").forEach(d2 => d2.classList.toggle("on", Number(d2.dataset.d) === i));
-  };
-  // une affiche verticale s'affiche entière sur fond violet (pas de recadrage sauvage)
-  ANNONCES.forEach((an, i) => {
-    if (!an.image) return;
-    if (an._portrait === undefined) {
-      const im = new Image();
-      im.onload = () => {
-        an._portrait = im.height > im.width * 1.05;
-        const sl = z.querySelector(`.caro-s[data-i="${i}"]`);
-        if (sl && an._portrait) sl.classList.add("portrait");
-      };
-      im.src = an.image;
-    } else if (an._portrait) {
-      const sl = z.querySelector(`.caro-s[data-i="${i}"]`);
-      if (sl) sl.classList.add("portrait");
-    }
-  });
-  z.querySelectorAll(".caro-dots i").forEach(d2 => d2.addEventListener("click", e2 => { e2.stopPropagation(); montre(Number(d2.dataset.d)); }));
-  const caro = el("caro");
-  caro.addEventListener("click", () => {
-    const an = ANNONCES[CARO_IDX];
-    if (!an) return;
-    if (an.lien) return window.open(an.lien, "_blank", "noopener");
-    if (an.image) montreAffichePlein(an);
-  });
-  if (an0Lien()) caro.dataset.lien = "1";
-  function an0Lien() { return ANNONCES.some(an => an.lien); }
-  // glissement du doigt
-  let x0 = null;
-  caro.addEventListener("touchstart", e2 => { x0 = e2.touches[0].clientX; }, { passive: true });
-  caro.addEventListener("touchend", e2 => {
-    if (x0 === null) return;
-    const dx = e2.changedTouches[0].clientX - x0;
-    if (Math.abs(dx) > 40) montre((CARO_IDX + (dx < 0 ? 1 : ANNONCES.length - 1)) % ANNONCES.length);
-    x0 = null;
-  }, { passive: true });
-  if (CARO_TIMER) clearInterval(CARO_TIMER);
-  if (ANNONCES.length > 1) CARO_TIMER = setInterval(() => montre((CARO_IDX + 1) % ANNONCES.length), 5000);
-}
-
 let CLASSEMENT_MODE = "semaine";
 function renderJeu(s) {
   if (!el("classementZone")) return;
@@ -2589,25 +2523,6 @@ async function chargeRappels() {
         <div class="abtns"><button class="abtn oui" id="prosSave">Enregistrer</button></div>
       </details>
       <details class="slot regl">
-        <summary>Affiches de l'accueil${ANNONCES.length ? " · " + ANNONCES.length + " en ligne" : " · aucune"}</summary>
-        <div class="sinfo" style="margin-bottom:10px;color:var(--muted)">Le carrousel en haut du dashboard de toute l'équipe : l'affiche d'un call, le voyage à gagner, un événement. Avec image, ou juste un titre sur fond violet. 6 max.</div>
-        ${ANNONCES.map(an => `
-        <div class="sinfo" style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--line)">
-          ${an.image ? `<img src="${an.image}" style="width:64px;height:36px;object-fit:cover;border-radius:6px;flex:none">` : `<span style="width:64px;height:36px;border-radius:6px;background:var(--accent-dim);display:inline-flex;align-items:center;justify-content:center;color:var(--accent);font-size:10px;flex:none">texte</span>`}
-          <span style="flex:1">${esc(an.titre || an.texte || "(sans titre)")}</span>
-          <button class="abtn non an-suppr" data-aid="${an.id}">Retirer</button>
-        </div>`).join("")}
-        <div class="row2" style="margin-top:12px">
-          <div class="field"><label>Titre</label><input id="anTitre" maxlength="80" placeholder="ex : Call d'équipe jeudi 19h"></div>
-          <div class="field"><label>Texte (optionnel)</label><input id="anTexte" maxlength="200" placeholder="ex : le voyage à Dubaï se joue ce mois-ci"></div>
-        </div>
-        <div class="row2">
-          <div class="field"><label>Lien au tap (optionnel, https)</label><input id="anLien" maxlength="300" placeholder="https://..."></div>
-          <div class="field"><label>Affiche (optionnelle)</label><input type="file" id="anImage" accept="image/*"></div>
-        </div>
-        <div class="abtns"><button class="abtn oui" id="anPublier">Publier l'affiche</button></div>
-      </details>
-      <details class="slot regl">
         <summary>Le barème des XP (lecture seule)</summary>
         <div class="sinfo" style="line-height:2">
           Setting calé : ${XP.setting_cale} XP · Setting effectué : ${XP.setting_show} XP · RDV de vente calé : ${XP.rdv_vente_cale} XP<br>
@@ -2636,62 +2551,6 @@ async function chargeRappels() {
           chargeRappels();
         } catch (e) { toast("Ça n'a pas marché : " + e.message, "err"); }
       });
-      const litAffiche = () => new Promise((resolve, reject) => {
-        const f = el("anImage").files && el("anImage").files[0];
-        if (!f) return resolve("");
-        const img = new Image();
-        img.onload = () => {
-          // l'affiche reste telle quelle : juste redimensionnée (max 1280) et compressée
-          const c = document.createElement("canvas");
-          const cx = c.getContext("2d");
-          const k = Math.min(1, 1280 / Math.max(img.width, img.height));
-          c.width = Math.round(img.width * k);
-          c.height = Math.round(img.height * k);
-          cx.drawImage(img, 0, 0, c.width, c.height);
-          URL.revokeObjectURL(img.src);
-          // compression progressive : on descend la qualité jusqu'à passer sous la limite
-          let data = "";
-          for (const q of [0.8, 0.65, 0.5, 0.38]) {
-            data = c.toDataURL("image/jpeg", q);
-            if (data.length <= 380000) break;
-          }
-          if (data.length > 380000) return reject(new Error("cette image reste trop lourde, choisis-en une plus simple"));
-          resolve(data);
-        };
-        img.onerror = () => reject(new Error("image illisible"));
-        img.src = URL.createObjectURL(f);
-      });
-      el("prosSave").addEventListener("click", async () => {
-        try {
-          for (const [cle, val] of [["prospection_objectif", String(Math.max(1, Number(el("prosObj").value) || 18))], ["prospection_relance_jours", String(Math.max(1, Number(el("prosDelai").value) || 3))]]) {
-            await call("params_save", { cle, valeur: val });
-            PARAMS[cle] = val;
-          }
-          toast("Réglages de prospection enregistrés.");
-          render();
-        } catch (e) { toast("Ça n'a pas marché : " + e.message, "err"); }
-      });
-      el("anPublier").addEventListener("click", async () => {
-        try {
-          const image = await litAffiche();
-          await call("annonce_ajoute", { titre: el("anTitre").value.trim(), texte: el("anTexte").value.trim(), lien: el("anLien").value.trim(), image });
-          const cfg2 = await call("config");
-          ANNONCES = cfg2.annonces || [];
-          toast("Affiche publiée : elle défile sur le dashboard de toute l'équipe.");
-          render();
-          chargeRappels();
-        } catch (e) { toast("Ça n'a pas marché : " + e.message, "err"); }
-      });
-      z.querySelectorAll(".an-suppr").forEach(b => b.addEventListener("click", async () => {
-        if (!(await confirmer({ titre: "Retirer cette affiche ?", ok: "Retirer", danger: true }))) return;
-        try {
-          await call("annonce_supprime", { id: b.dataset.aid });
-          const cfg2 = await call("config");
-          ANNONCES = cfg2.annonces || [];
-          render();
-          chargeRappels();
-        } catch (e) { toast("Ça n'a pas marché : " + e.message, "err"); }
-      }));
       const ds = el("defiStop");
       if (ds) ds.addEventListener("click", async () => {
         try {
@@ -2933,15 +2792,6 @@ async function loadData() {
     RDVS = d.rdvs || [];
     CORBEILLE = d.corbeille || [];
     LEADS = d.leads || [];
-    // les affiches ont changé côté serveur ? on recharge la config (images incluses)
-    const idsServeur = (d.annonce_ids || []).join(",");
-    const idsLocaux = ANNONCES.map(x => x.id).join(",");
-    if (idsServeur !== idsLocaux) {
-      try {
-        const cfg2 = await call("config");
-        ANNONCES = cfg2.annonces || [];
-      } catch (_) { /* au prochain passage */ }
-    }
     if (d.maintenant) SERVER_OFFSET = new Date(d.maintenant).getTime() - Date.now();
     // Nouvelle vente closée par quelqu'un d'autre depuis le dernier chargement ?
     const Fx = SalesStats.F;
