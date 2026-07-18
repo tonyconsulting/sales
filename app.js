@@ -530,6 +530,7 @@ function rdvsVisibles() {
 }
 
 function render() {
+  majProfilTop();
   const s = SalesStats.compute(recsVisibles(), PERIOD, new Date());
   // En vue « Moi », relances et pipeline s'arbitrent sur l'historique COMPLET
   // de l'équipe (le closing d'un coéquipier éteint ma relance), puis on
@@ -1024,6 +1025,48 @@ function avi(nom) {
   for (const c of n) hh = (hh * 31 + c.charCodeAt(0)) % 360;
   return `<span class="avi" style="background:hsl(${hh} 42% 26%);color:hsl(${hh} 75% 82%)">${esc(n[0].toUpperCase())}</span>${esc(n)}`;
 }
+// ----- Le profil : complétion (photo, nom, mail, téléphone, 25 % chacun) -----
+function profilPct() {
+  return [!!AVATARS[MOI.nom], !!MOI.nom_famille, !!MOI.email, !!MOI.telephone].filter(Boolean).length * 25;
+}
+function profilManque() {
+  const m = [];
+  if (!AVATARS[MOI.nom]) m.push("ta photo");
+  if (!MOI.nom_famille) m.push("ton nom");
+  if (!MOI.email) m.push("ton mail");
+  if (!MOI.telephone) m.push("ton téléphone");
+  return m;
+}
+function profilBarreHTML() {
+  const pct = profilPct(), manque = profilManque();
+  return `<div style="margin-bottom:16px">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+      <span class="sinfo" style="margin:0">Profil complété</span>
+      <b style="color:${pct >= 100 ? "#34d399" : "var(--accent)"}">${pct} %</b>
+    </div>
+    <div class="gbar"><i style="width:${pct}%"></i></div>
+    ${pct >= 100 ? "" : `<div class="sinfo" style="margin:6px 0 0;color:var(--muted)">Il manque : ${manque.join(", ")}.</div>`}
+  </div>`;
+}
+function ringHTML(pct) {
+  const c = 2 * Math.PI * 19.5;
+  return `<svg class="pring" viewBox="0 0 42 42">
+    <circle cx="21" cy="21" r="19.5" fill="none" stroke="var(--line)" stroke-width="2.5"/>
+    <circle cx="21" cy="21" r="19.5" fill="none" stroke="${pct >= 100 ? "#34d399" : "var(--accent)"}" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${(c * (1 - pct / 100)).toFixed(1)}" transform="rotate(-90 21 21)"/>
+  </svg>`;
+}
+function majProfilTop() {
+  const bd = el("profilTop"), bm = el("profilTopM");
+  if (!bd || !bm || !MOI || !MOI.nom) return;
+  const lecteur = MOI.role === "observateur";
+  const pct = profilPct();
+  const av = AVATARS[MOI.nom]
+    ? `<img src="${AVATARS[MOI.nom]}" alt="">`
+    : `<span class="pinit">${esc((MOI.nom || "?")[0].toUpperCase())}</span>`;
+  const inner = av + (lecteur ? "" : ringHTML(pct) + (pct < 100 ? `<span class="ppct">${pct} %</span>` : ""));
+  bd.innerHTML = inner;
+  bm.innerHTML = `<span class="ptop">${inner}</span>`;
+}
 function majAvatars() {
   AVATARS = {};
   (EQUIPE || []).forEach(m => { if (m.avatar) AVATARS[m.nom] = m.avatar; });
@@ -1064,6 +1107,8 @@ function brancheAvatar() {
         render();
         const pa = el("profilAvatar");
         if (pa) pa.innerHTML = `<img src="${data}" alt="">`;
+        const rb = el("prfBarre");
+        if (rb) rb.innerHTML = profilBarreHTML();
         toast("Photo enregistrée : l'équipe te voit maintenant partout avec.");
       } catch (e) { toast("Ça n'a pas marché : " + e.message, "err"); }
     };
@@ -1087,6 +1132,7 @@ function montreProfil() {
         ${lecteur ? "" : `<button class="del" id="profilPhotoBtn" style="margin-top:4px">${AVATARS[MOI.nom] ? "Changer ou retirer la photo" : "Ajouter une photo"}</button>`}
       </div>
     </div>
+    ${lecteur ? "" : `<div id="prfBarre">${profilBarreHTML()}</div>`}
     <div class="row2">
       <div class="field"><label>Prénom (l'identité dans l'app, vois avec Tony pour le changer)</label><input value="${esc(MOI.nom)}" disabled style="opacity:.55"></div>
       <div class="field"><label>Nom</label><input id="prfNom" maxlength="40" value="${esc(MOI.nom_famille || "")}" ${lecteur ? "disabled" : ""}></div>
@@ -1115,6 +1161,8 @@ function montreProfil() {
           majAvatars();
           render();
           pa.innerHTML = `<span style="font-size:26px;font-weight:750;color:var(--accent)">${esc((MOI.nom || "?")[0].toUpperCase())}</span>`;
+          const rb = el("prfBarre");
+          if (rb) rb.innerHTML = profilBarreHTML();
           toast("Photo retirée.");
         } catch (e) { toast("Ça n'a pas marché : " + e.message, "err"); }
         return;
@@ -1132,6 +1180,8 @@ function montreProfil() {
       MOI.email = el("prfMail").value.trim() || null;
       MOI.telephone = el("prfTel").value.trim() || null;
       fermeOverlay(ov);
+      majProfilTop();
+      render();
       toast("Profil enregistré.");
     } catch (e) { toast("Ça n'a pas marché : " + e.message, "err"); }
   });
@@ -2180,32 +2230,44 @@ function renderJeu(s) {
   // --- Le guide de démarrage : la checklist du nouveau, cochée toute seule
   const gz = el("guideZone");
   if (gz) {
-    const F5 = SalesStats.F;
-    const mesCalls = RECORDS.filter(r => r.fields[F5.qui] === MOI.nom || r.fields[F5.quiPres] === MOI.nom);
+    const p0 = PARAMS || {};
+    const onb = MOI.onboarding || {};
+    const leads0 = mesLeads();
+    const dmFaits = leads0.filter(l => l.contacte_le).length;
     const ETAPES = [
+      (p0.onb_video_url || "").trim() ? { txt: "Regarde la vidéo d'onboarding", ok: !!onb.video, cle: "video", lien: p0.onb_video_url.trim() } : null,
+      (p0.onb_form_url || "").trim() ? { txt: "Remplis le questionnaire d'arrivée", ok: !!onb.form, cle: "form", lien: p0.onb_form_url.trim() } : null,
+      (p0.script_setting || "").trim() ? { txt: "Lis le script de setting", ok: !!onb.script, cle: "script", script: true } : null,
+      { txt: "Complète ton profil (photo, nom, mail, téléphone)", ok: profilPct() >= 100, profil: true, det: profilPct() + " %" },
       { txt: "Active tes notifications", ok: typeof Notification !== "undefined" && Notification.permission === "granted", page: "planning" },
-      { txt: "Mets ta photo de profil", ok: !!AVATARS[MOI.nom], profil: true },
-      { txt: "Complète ton profil (mail ou téléphone)", ok: !!(MOI.email || MOI.telephone), profil: true },
-      { txt: "Ajoute ton premier lead", ok: mesLeads().length > 0, page: "prospection" },
-      { txt: "Logge ton premier call", ok: mesCalls.length > 0, page: "log" },
-      { txt: "Cale ton premier setting", ok: mesCalls.some(r => ["Calé (à venir)", "RDV de vente calé"].includes(r.fields[F5.resSetting])), page: "log" },
-    ];
+      { txt: "Ajoute tes 3 premiers leads", ok: leads0.length >= 3, page: "prospection", det: Math.min(3, leads0.length) + "/3" },
+      { txt: "Envoie tes 3 premiers DMs", ok: dmFaits >= 3, page: "prospection", det: Math.min(3, dmFaits) + "/3" },
+    ].filter(Boolean);
     const faits = ETAPES.filter(e2 => e2.ok).length;
     const fini = faits === ETAPES.length;
     const cache = MOI.role === "admin" || MOI.role === "observateur" || fini;
     gz.innerHTML = cache ? "" : `<div class="pzone" style="margin-top:16px;border-color:var(--accent)">
-      <h3><span class="kdot" style="background:var(--accent)"></span>Ton démarrage<span class="knb">${faits} / ${ETAPES.length}</span></h3>
+      <h3><span class="kdot" style="background:var(--accent)"></span>Tes premières missions<span class="knb">${faits} / ${ETAPES.length}</span></h3>
       <div class="gbar" style="margin-bottom:10px"><i style="width:${Math.round(faits / ETAPES.length * 100)}%"></i></div>
       ${ETAPES.map((e2, i) => `<div class="clig" style="cursor:${e2.ok ? "default" : "pointer"}" ${e2.ok ? "" : `data-guide="${i}"`}>
         <span class="cpos" style="${e2.ok ? "background:rgba(52,211,153,.16);color:#34d399" : ""}">${e2.ok ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>' : i + 1}</span>
         <span style="${e2.ok ? "color:var(--muted);text-decoration:line-through" : ""}">${e2.txt}</span>
-        ${e2.ok ? "" : `<span class="cxp" style="font-size:12px;color:var(--accent)">Faire</span>`}
+        ${e2.ok ? "" : `<span class="cxp" style="font-size:12px;color:var(--accent)">${e2.det || "Faire"}</span>`}
       </div>`).join("")}
     </div>`;
-    gz.querySelectorAll("[data-guide]").forEach(x => x.addEventListener("click", () => {
+    gz.querySelectorAll("[data-guide]").forEach(x => x.addEventListener("click", async () => {
       const e2 = ETAPES[Number(x.dataset.guide)];
-      if (e2.profil) montreProfil();
-      else if (e2.page) showPage(e2.page);
+      if (e2.lien && /^https?:\/\//.test(e2.lien)) window.open(e2.lien, "_blank", "noopener");
+      else if (e2.script) montreScript("Setting");
+      else if (e2.profil) { montreProfil(); return; }
+      else if (e2.page) { showPage(e2.page); return; }
+      if (e2.cle && !e2.ok) {
+        try {
+          await call("guide_coche", { etape: e2.cle });
+          MOI.onboarding = { ...(MOI.onboarding || {}), [e2.cle]: true };
+          render();
+        } catch (_) { /* restera cochable */ }
+      }
     }));
   }
   // --- Tes missions (auto-vérifiées, le bonus compte dans le classement)
@@ -2581,10 +2643,11 @@ Encaissé : ${eur(cur.encaisse || 0)}${dE(cur.encaisse, prev.encaisse)}
 }
 
 // ----- Script en contexte -----
-function montreScript() {
+function montreScript(force) {
   const p = PARAMS || {};
+  const T2 = (typeof force === "string" && force) || TYPE;
   const morceaux = [];
-  if (TYPE === "Setting") {
+  if (T2 === "Setting") {
     if (p.script_setting) morceaux.push(["Script setting", p.script_setting]);
   } else {
     if (p.script_vente1) morceaux.push(["Phase 1 — présentation", p.script_vente1]);
@@ -2594,7 +2657,7 @@ function montreScript() {
   }
   const ov = el("scriptOverlay");
   ov.innerHTML = `<div class="offre-carte">
-    <div class="offre-titre" style="font-size:19px">Script — ${TYPE === "Setting" ? "setting" : "vente"}</div>
+    <div class="offre-titre" style="font-size:19px">Script — ${T2 === "Setting" ? "setting" : "vente"}</div>
     ${morceaux.length ? morceaux.map(([t, x]) => `<div style="margin-top:14px"><div class="stitre" style="font-size:13.5px;color:var(--accent)">${esc(t)}</div><div class="offre-infos" style="white-space:pre-wrap;margin-bottom:0">${esc(x)}</div></div>`).join("") : `<div class="offre-infos">Aucun script rempli pour l'instant. Tony peut les écrire dans Réglages, onglet Scripts.</div>`}
     <div class="offre-actions" style="margin-top:18px"><button class="abtn oui" id="scriptFermer">Fermer</button></div>
   </div>`;
@@ -2622,6 +2685,7 @@ async function chargeRappels() {
         <button class="rg-tab" data-tab="rappels">Rappels avant RDV</button>
         <button class="rg-tab" data-tab="messages">Messages prospects</button>
         <button class="rg-tab" data-tab="scripts">Scripts</button>
+        <button class="rg-tab" data-tab="onboarding">Onboarding</button>
         ${MEMBRES.length ? `<button class="rg-tab" data-tab="equipe">Équipe</button>` : ""}
         ${MEMBRES.length ? `<button class="rg-tab" data-tab="jeu">Jeu</button>` : ""}
       </div>
@@ -2682,7 +2746,13 @@ async function chargeRappels() {
         <summary>${lbl}${(PARAMS[cle] || "").trim() ? "" : " · vide"}</summary>
         <div class="field"><textarea class="prm-txt" maxlength="4000" style="min-height:120px">${esc(PARAMS[cle] || "")}</textarea></div>
         <div class="abtns"><button class="abtn oui prm-save">Enregistrer</button></div>
-      </details>`).join("") + `</div>` +
+      </details>`).join("") + `</div>
+      <div class="rg-pan" id="pan-onboarding" style="display:none">
+      <div class="sinfo" style="margin-bottom:14px;color:var(--muted)">Le parcours d'un nouveau : ces liens alimentent « Tes premières missions » sur son dashboard. Tant qu'un lien est vide, l'étape n'apparaît pas chez lui.</div>
+      <div class="field"><label>Lien de la vidéo d'onboarding (YouTube, Loom, Drive)</label><input id="onbVideo" type="url" maxlength="300" value="${esc(PARAMS.onb_video_url || "")}" placeholder="https://"></div>
+      <div class="field"><label>Lien du questionnaire d'arrivée (Fillout, Google Form)</label><input id="onbForm" type="url" maxlength="300" value="${esc(PARAMS.onb_form_url || "")}" placeholder="https://"></div>
+      <div class="abtns"><button class="abtn oui" id="onbSave">Enregistrer</button></div>
+      </div>` +
       (!MEMBRES.length ? "" : `
       <div class="rg-pan" id="pan-equipe" style="display:none">
       <div class="sinfo" style="margin-bottom:14px;color:var(--muted)">Les accès de l'équipe : rôles, référents, commissions, liens. Désactiver quelqu'un coupe son lien immédiatement.</div>` +
@@ -2866,6 +2936,21 @@ async function chargeRappels() {
         setTimeout(() => { b.textContent = "Enregistrer"; b.disabled = false; }, 1500);
       } catch (e) { toast("Ça n'a pas marché : " + e.message, "err"); b.textContent = "Enregistrer"; b.disabled = false; }
     }));
+    const onbSv = el("onbSave");
+    if (onbSv) onbSv.addEventListener("click", async () => {
+      const urls = [["onb_video_url", el("onbVideo").value.trim()], ["onb_form_url", el("onbForm").value.trim()]];
+      for (const [, u] of urls) {
+        if (u && !/^https?:\/\/\S+$/.test(u)) return toast("Un lien doit commencer par https://", "err");
+      }
+      onbSv.disabled = true;
+      onbSv.textContent = "Enregistrement…";
+      try {
+        for (const [cle, u] of urls) { await call("params_save", { cle, valeur: u }); PARAMS[cle] = u; }
+        toast("Enregistré : le guide des nouveaux est à jour.");
+      } catch (e) { toast("Ça n'a pas marché : " + e.message, "err"); }
+      onbSv.textContent = "Enregistrer";
+      onbSv.disabled = false;
+    });
     const montreTab = t => {
       RG_TAB = t;
       z.querySelectorAll(".rg-pan").forEach(p => { p.style.display = p.id === "pan-" + t ? "" : "none"; });
@@ -3097,6 +3182,10 @@ async function init() {
   el("hello").textContent = "Salut " + MOI.nom;
   el("userbox").style.display = "";
   el("uinit").textContent = (MOI.nom || "?")[0].toUpperCase();
+  const pTop = el("profilTop"), pTopM = el("profilTopM");
+  if (pTop) pTop.addEventListener("click", () => montreProfil());
+  if (pTopM) pTopM.addEventListener("click", () => montreProfil());
+  majProfilTop();
   majAvatars();
   brancheAvatar();
   el("unom").textContent = MOI.nom;
