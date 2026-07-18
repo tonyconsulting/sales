@@ -104,6 +104,7 @@ const NOTIFS_CATALOGUE = [
   { cle: "vente_ouverte", label: "RDV ouvert à toute l'équipe", balises: "{prospect} {quand} {setter}", defaut: ["RDV ouvert — premier qui accepte", "{prospect}, {quand} (setter : {setter}). 2 minutes pour le prendre."] },
   { cle: "offre_reping", label: "Rappel 30 s avant l'ouverture (au closer proposé)", balises: "{prospect} {quand}", defaut: ["Plus que 30 secondes", "{prospect}, {quand} — après, le RDV part à toute l'équipe."] },
   { cle: "rdv_orphelin", label: "RDV sans preneur (aux admins)", balises: "{prospect} {quand}", defaut: ["RDV sans preneur", "{prospect}, {quand}. Réassigne-le depuis ton dashboard."] },
+  { cle: "guide_fini", label: "Guide de démarrage terminé (aux admins)", balises: "{qui}", defaut: ["Guide terminé", "{qui} a fini ses premières missions. Tu peux lui ouvrir la grande interface dans Réglages, onglet Équipe."] },
   { cle: "confirme_veille", label: "Veille 18 h — RDV à confirmer (au setter)", balises: "{prospect} {quand}", defaut: ["À confirmer pour demain", "{prospect}, {quand}. Envoie-lui le message de confirmation."] },
   { cle: "rdv_pris", label: "RDV pris (envoyée au setter)", balises: "{qui} {prospect} {quand} {delai}", defaut: ["RDV pris", "{qui} a pris {prospect}, {quand} {delai}."] },
   { cle: "proposition", label: "Proposition d'horaire (au setter)", balises: "{qui} {nouveau} {prospect} {quand}", defaut: ["Proposition d'horaire à valider", "{qui} propose {nouveau} pour {prospect} (au lieu de {quand})."] },
@@ -2245,6 +2246,12 @@ function renderJeu(s) {
     ].filter(Boolean);
     const faits = ETAPES.filter(e2 => e2.ok).length;
     const fini = faits === ETAPES.length;
+    if (fini && MOI.role === "membre" && !onb.fini && !window.__GUIDE_FINI) {
+      window.__GUIDE_FINI = true;
+      call("guide_fini", {})
+        .then(() => { MOI.onboarding = { ...(MOI.onboarding || {}), fini: true }; })
+        .catch(() => { window.__GUIDE_FINI = false; });
+    }
     const cache = MOI.role === "admin" || MOI.role === "observateur" || fini;
     gz.innerHTML = cache ? "" : `<div class="pzone" style="margin-top:16px;border-color:var(--accent)">
       <h3><span class="kdot" style="background:var(--accent)"></span>Tes premières missions<span class="knb">${faits} / ${ETAPES.length}</span></h3>
