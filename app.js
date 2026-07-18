@@ -10,7 +10,7 @@ try {
 // Clé PUBLIQUE de signature des notifications (la privée est côté serveur)
 const VAPID_PUB = "BBefpGJrlJu2jhuahy0XnidzpnE5nfZ84kRh3YueXISXD036WLlbQu50vebuJcKKiF05xz5Cj_C__Qa8wc_YWNQ";
 
-let MOI = null, EQUIPE = [], RECORDS = [], RDVS = [], CORBEILLE = [], ANNONCES = [], CARO_IDX = 0, CARO_TIMER = null, PROSPECT_FILTRE = "", FICHES = {}, SERVER_OFFSET = 0, OFFRES_VUES = new Set(), FILE_RELANCES = [], FILE_IDX = 0, PERIOD = "1j", TYPE = "Setting", PLANFILTRE = "tous", PLANTYPE = "tous", AGENDA_MODE = "mois", AGENDA_REF = Date.now(), VUEQUIPE = "toutes", VUEMOI = "equipe", PENDING_RDV = null, PENDING_PROSPECT = "", PENDING_TYPE = "", PENDING_TEL = "", PENDING_TEL_PROSPECT = "";
+let MOI = null, EQUIPE = [], RECORDS = [], RDVS = [], CORBEILLE = [], LEADS = [], ANNONCES = [], CARO_IDX = 0, CARO_TIMER = null, PROSPECT_FILTRE = "", FICHES = {}, SERVER_OFFSET = 0, OFFRES_VUES = new Set(), FILE_RELANCES = [], FILE_IDX = 0, PERIOD = "1j", TYPE = "Setting", PLANFILTRE = "tous", PLANTYPE = "tous", AGENDA_MODE = "mois", AGENDA_REF = Date.now(), VUEQUIPE = "toutes", VUEMOI = "equipe", PENDING_RDV = null, PENDING_PROSPECT = "", PENDING_TYPE = "", PENDING_TEL = "", PENDING_TEL_PROSPECT = "";
 const NOM_EQUIPE = { kelian: "Team Kélian", mila: "Team Mila" };
 const voitTout = () => MOI && (MOI.role === "admin" || MOI.role === "observateur");
 const chipEquipe = e => (voitTout() && e) ? `<span class="pill ${e === "mila" ? "teamM" : "teamK"}" title="${NOM_EQUIPE[e] || e}">${e === "mila" ? "M" : "K"}</span> ` : "";
@@ -35,6 +35,7 @@ const quandJoli = (iso, today) => jolieDate(jourLocal(iso), today) + " à " + he
 
 const PAGES = {
   log: ["Log un call", "Après chaque call, 20 secondes"],
+  prospection: ["Prospection", "La machine à DM : contacte, relance, convertis"],
   dashboard: ["Dashboard", "Vue d'ensemble"],
   pipeline: ["Pipeline", "Tes deals, du contact au closé"],
   prospects: ["Prospects", "Tous les prospects identifiés"],
@@ -816,6 +817,7 @@ function render() {
   renderAgenda();
   renderJeu(s);
   renderAnnonces();
+  renderProspection(s);
 
   // Menus « Résultat… » rapides (table prospects + retards du planning)
   document.querySelectorAll(".quickres").forEach(sel => sel.addEventListener("change", async () => {
@@ -1498,6 +1500,186 @@ function montreFile() {
   el("fileQuitter").addEventListener("click", () => { fermeOverlay(ov); });
 }
 
+// ----- Prospection : la machine à DM (inspirée du process de Kéo) -----
+const LEAD_ETATS = { a_contacter: ["À contacter", "grey"], contacte: ["Contacté", "amber"], repondu: ["Répondu", ""], appel_reserve: ["Appel réservé", "blue"], negociation: ["En négociation", "blue"], signe: ["Converti", "green"], perdu: ["Perdu", "red"] };
+function mesLeads() {
+  return LEADS.filter(l => l.qui === MOI.nom);
+}
+function leadConverti(l) {
+  // un call existe avec le même @ : le lead est passé dans la machine de vente
+  const cle = "ig:" + String(l.handle || "").trim().toLowerCase().replace(/^@/, "").replace(/\s+/g, "");
+  return PROSPECTS_IDX ? PROSPECTS_IDX.has(cle) : false;
+}
+let PROSPECTS_IDX = null;
+function majProspectsIdxLeads() {
+  PROSPECTS_IDX = new Set(RECORDS.map(r => SalesStats.keyOf(r)).filter(Boolean));
+}
+function renderProspection(s) {
+  if (!el("prosObjectif")) return;
+  majProspectsIdxLeads();
+  const today = s.today;
+  const miens = mesLeads();
+  const lecteur = MOI.role === "observateur";
+  const objectif = Math.max(1, Number(PARAMS.prospection_objectif) || 18);
+  const contactsJour = miens.filter(l => l.contacte_le === today).length;
+  const relancesJour = miens.filter(l => l.derniere_relance_le === today).length;
+  const actionsJour = contactsJour + relancesJour;
+  const aContacter = miens.filter(l => l.statut === "a_contacter" && !leadConverti(l));
+  const relancesDues = miens.filter(l => l.relance_le && l.relance_le <= today && !["a_contacter", "perdu", "signe"].includes(l.statut) && !leadConverti(l))
+    .sort((p, q) => p.relance_le.localeCompare(q.relance_le));
+  const froids = relancesDues.filter(l => l.relance_le < today);
+  // badge de nav
+  const bp = el("bPros");
+  if (bp) {
+    const n = lecteur ? 0 : aContacter.length + relancesDues.length;
+    bp.style.display = n ? "" : "none";
+    bp.textContent = n;
+  }
+  // anneaux d'objectif
+  const ring = (fait, total, lbl) => {
+    const pct = Math.min(100, Math.round(fait / Math.max(1, total) * 100));
+    const coul = pct >= 100 ? "#34d399" : "var(--accent)";
+    return `<div class="pring" style="background:conic-gradient(${coul} ${pct}%, #1e1930 0)">
+      <span><b>${fait}</b><small>${esc(lbl)}</small></span></div>`;
+  };
+  el("prosObjectif").innerHTML = lecteur ? "" : `<div class="pzone">
+    <h3><span class="kdot" style="background:var(--accent)"></span>Objectif du jour<span class="knb">${actionsJour} / ${objectif} actions</span></h3>
+    <div class="prings">
+      ${ring(contactsJour, objectif, "leads contactés sur " + objectif)}
+      ${ring(relancesJour, Math.max(1, relancesDues.length + relancesJour), "relances faites (" + relancesDues.length + " dues)")}
+    </div>
+  </div>`;
+  // le bandeau « ça refroidit »
+  el("prosFroid").innerHTML = froids.length ? `<div class="bandeau-retard" style="display:block">${froids.length} lead${froids.length > 1 ? "s" : ""} refroidiss${froids.length > 1 ? "ent" : "e"} — relance-les avant de les perdre</div>` : "";
+  // les files d'action
+  const ligneLead = (l, bouton) => {
+    const [lblE, clsE] = LEAD_ETATS[l.statut] || [l.statut, "grey"];
+    const retard = l.relance_le && l.relance_le < today ? Math.round((new Date(today) - new Date(l.relance_le)) / 86400000) : 0;
+    const depuis = l.contacte_le ? Math.round((new Date(today) - new Date(l.contacte_le)) / 86400000) : null;
+    return `<div class="ld" data-lid="${l.id}">
+      <span style="cursor:pointer" data-fichelead="${l.id}">${avi(l.handle.replace(/^@/, ""))}</span>
+      <div class="ld-i" style="cursor:pointer" data-fichelead="${l.id}">
+        <div class="ld-m">
+          <span class="pill ${clsE}">${lblE}</span>
+          ${retard ? `<span class="late">${retard} j de retard</span>` : ""}
+          ${depuis !== null ? `<span>${depuis} j depuis contact</span>` : ""}
+          ${l.abonnes ? `<span>${esc(l.abonnes)}</span>` : ""}${l.niche ? `<span>${esc(l.niche)}</span>` : ""}
+        </div>
+      </div>
+      ${bouton}
+    </div>`;
+  };
+  const zoneF = (titre, coul, liste, vide, bouton) => `<div class="pzone">
+    <h3><span class="kdot" style="background:${coul}"></span>${titre}<span class="knb">${liste.length}</span></h3>
+    ${liste.length ? liste.map(l => ligneLead(l, bouton(l))).join("") : `<div class="kvide">${vide}</div>`}
+  </div>`;
+  el("prosFiles").innerHTML = lecteur ? "" :
+    zoneF("À contacter", "#948da6", aContacter, "Aucun lead à contacter. Ajoute-en au-dessus.", l => `<button class="abtn oui" data-ldgeste="contacte" data-lid="${l.id}">Contacté</button>`) +
+    zoneF("Relances à faire", "#fbbf24", relancesDues, "Tout est relancé. Personne ne refroidit.", l => `<button class="abtn oui" data-ldgeste="relance" data-lid="${l.id}">Relancé</button>`);
+  // le chemin vers la prochaine vente
+  const contactes = miens.filter(l => l.statut !== "a_contacter" || leadConverti(l));
+  const repondus = contactes.filter(l => ["repondu", "appel_reserve", "negociation", "signe"].includes(l.statut) || leadConverti(l));
+  const convertis = miens.filter(l => leadConverti(l) || l.statut === "signe");
+  const clesConverties = new Set(convertis.map(l => "ig:" + String(l.handle).trim().toLowerCase().replace(/^@/, "").replace(/\s+/g, "")));
+  const F2 = SalesStats.F;
+  const ventes = new Set();
+  RECORDS.forEach(r => {
+    const k = SalesStats.keyOf(r);
+    if (k && clesConverties.has(k) && (r.fields[F2.resClosing] || r.fields[F2.resPres]) === "Closé") ventes.add(k);
+  });
+  const nC = contactes.length, nR = repondus.length, nCv = convertis.length, nV = ventes.size;
+  const barF = (lbl, n, max2) => `<div style="display:flex;align-items:center;gap:10px;padding:4px 0;font-size:13px">
+    <span style="width:110px;color:var(--muted)">${lbl}</span>
+    <div class="gbar" style="flex:1;margin:0"><i style="width:${Math.round(n / Math.max(1, max2) * 100)}%"></i></div>
+    <b style="width:34px;text-align:right">${n}</b>
+    <span style="width:44px;text-align:right;color:var(--muted);font-size:11.5px">${Math.round(n / Math.max(1, nC) * 100)} %</span>
+  </div>`;
+  const tauxRep = nC ? Math.round(nR / nC * 100) : 0;
+  let phrase = "";
+  if (nV > 0) phrase = `À ton rythme actuel (${tauxRep} % de réponse), contacte ~${Math.max(1, Math.ceil(nC / nV))} profils pour ta prochaine vente.`;
+  else if (nC > 0) phrase = `Taux de réponse : ${tauxRep} %. Continue à contacter, la première vente issue de la prospection arrive.`;
+  el("prosFunnel").innerHTML = (lecteur || !nC) ? "" : `<div class="pzone">
+    <h3><span class="kdot" style="background:#34d399"></span>Le chemin vers la prochaine vente</h3>
+    ${barF("Contactés", nC, nC)}${barF("Répondus", nR, nC)}${barF("Settings calés", nCv, nC)}${barF("Ventes closées", nV, nC)}
+    ${phrase ? `<div class="sinfo" style="margin-top:8px;color:var(--accent)">${esc(phrase)}</div>` : ""}
+  </div>`;
+  // les 4 compteurs
+  const pipeline = miens.filter(l => !["perdu"].includes(l.statut)).length;
+  const convertisMois = convertis.filter(l => true).length;
+  el("prosCompteurs").innerHTML = lecteur ? "" : `<div class="grid3" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
+    <div class="card"><div class="label">Leads en pipeline</div><div class="value" style="font-size:28px">${pipeline}</div></div>
+    <div class="card"><div class="label">Relances aujourd'hui</div><div class="value" style="font-size:28px">${relancesJour}</div></div>
+    <div class="card"><div class="label">Taux de réponse</div><div class="value" style="font-size:28px">${tauxRep} %</div></div>
+    <div class="card"><div class="label">Convertis (total)</div><div class="value" style="font-size:28px">${convertisMois}</div></div>
+  </div>`;
+  // branchements
+  document.querySelectorAll("[data-ldgeste]").forEach(b => b.addEventListener("click", async () => {
+    if (b.classList.contains("busy")) return;
+    b.classList.add("busy");
+    try { await call("lead_action", { id: b.dataset.lid, geste: b.dataset.ldgeste }); await loadData(); }
+    catch (e) { toast("Ça n'a pas marché : " + e.message, "err"); }
+    finally { b.classList.remove("busy"); }
+  }));
+  document.querySelectorAll("[data-fichelead]").forEach(x => x.addEventListener("click", () => montreLead(x.dataset.fichelead)));
+}
+function montreLead(id) {
+  const l = LEADS.find(x => x.id === id);
+  if (!l) return;
+  const ov = el("callOverlay");
+  const [lblE] = LEAD_ETATS[l.statut] || [l.statut];
+  const converti = leadConverti(l);
+  ov.innerHTML = `<div class="offre-carte" style="text-align:left;max-width:440px">
+    <div class="offre-titre" style="font-size:19px">${esc(l.handle)}</div>
+    <div class="sinfo" style="margin:4px 0 12px">${esc(lblE)}${converti ? " · déjà dans tes prospects" : ""}${l.abonnes ? " · " + esc(l.abonnes) : ""}${l.niche ? " · " + esc(l.niche) : ""}${l.relances_faites ? " · " + l.relances_faites + " relance" + (l.relances_faites > 1 ? "s" : "") : ""}</div>
+    ${converti ? "" : `<div class="abtns" style="flex-wrap:wrap;margin-bottom:12px">
+      ${l.statut === "a_contacter" ? `<button class="abtn oui" data-g="contacte">Contacté</button>` : ""}
+      ${["contacte"].includes(l.statut) ? `<button class="abtn oui" data-g="repondu">Il a répondu</button>` : ""}
+      ${["repondu", "appel_reserve"].includes(l.statut) ? `<button class="abtn" data-g="negociation">En négociation</button>` : ""}
+      ${["repondu", "negociation", "appel_reserve"].includes(l.statut) ? `<button class="abtn oui" id="ldCaler">Caler le setting</button>` : ""}
+      <button class="abtn non" data-g="perdu">Perdu</button>
+    </div>`}
+    <div class="row2">
+      <div class="field"><label>Prochaine relance</label><input type="date" id="ldRelDate" value="${esc(l.relance_le || "")}"></div>
+      <div class="field"><label>Note</label><input id="ldNoteEdit" maxlength="300" value="${esc(l.note || "")}"></div>
+    </div>
+    <div class="offre-actions">
+      <button class="abtn oui" id="ldSauver">Enregistrer</button>
+      <button class="abtn" id="ldFermer">Fermer</button>
+      <button class="abtn non" id="ldSuppr">Supprimer</button>
+    </div>
+  </div>`;
+  ouvreOverlay(ov);
+  el("ldFermer").addEventListener("click", () => fermeOverlay(ov));
+  ov.querySelectorAll("[data-g]").forEach(b => b.addEventListener("click", async () => {
+    try { await call("lead_action", { id: l.id, geste: b.dataset.g }); fermeOverlay(ov); await loadData(); }
+    catch (e) { toast("Ça n'a pas marché : " + e.message, "err"); }
+  }));
+  const cal = el("ldCaler");
+  if (cal) cal.addEventListener("click", () => {
+    fermeOverlay(ov);
+    showPage("log");
+    resetForm();
+    setType("Setting");
+    el("inProspect").value = l.handle.replace(/^@/, "").replace(/[._]/g, " ");
+    el("inInsta").value = l.handle;
+    el("inResSetting").value = "Calé (à venir)";
+    el("inResSetting").dispatchEvent(new Event("change"));
+    toast("Pré-rempli depuis la prospection : mets la date du setting et enregistre. Le lead passera en Converti tout seul.");
+  });
+  el("ldSauver").addEventListener("click", async () => {
+    try {
+      await call("lead_maj", { id: l.id, relance_le: el("ldRelDate").value || "", note: el("ldNoteEdit").value.trim() });
+      fermeOverlay(ov);
+      await loadData();
+    } catch (e) { toast("Ça n'a pas marché : " + e.message, "err"); }
+  });
+  el("ldSuppr").addEventListener("click", async () => {
+    if (!(await confirmer({ titre: "Supprimer ce lead ?", ok: "Supprimer", danger: true }))) return;
+    try { await call("lead_supprime", { id: l.id }); fermeOverlay(ov); await loadData(); }
+    catch (e) { toast("Ça n'a pas marché : " + e.message, "err"); }
+  });
+}
+
 // ----- Agenda : le calendrier de l'équipe (vue mois / semaine) -----
 const MOIS_NOMS = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
 const JOURS_COURTS = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
@@ -1641,6 +1823,7 @@ function prochainRang(xp) {
   return null; // Légende KNE : rang max
 }
 const MISSIONS_JOUR = [
+  { id: "j0", periode: "jour", txt: "Prospecte (contacts + relances)", but: 0, val: j => j.prosJour, xp: 15 },
   { id: "j1", periode: "jour", txt: "Logge 3 calls", but: 3, val: j => j.callsJour, xp: 15 },
   { id: "j2", periode: "jour", txt: "Cale 1 setting ou 1 RDV de vente", but: 1, val: j => j.calesJour, xp: 10 },
   { id: "j3", periode: "jour", txt: "Honore 1 relance", but: 1, val: j => j.relHonJour, xp: 10 },
@@ -1664,7 +1847,7 @@ function calculeJeu() {
   const debutMois = today.slice(0, 8) + "01";
   const J = {};
   const joueur = n => J[n] || (J[n] = { xpTotal: 0, xpSemaine: 0, xpMois: 0, xpSemPrec: 0, jours: new Set(), grosseVente: 0, encParSemaine: {}, serie: 0, serieMax: 0,
-    callsJour: 0, callsSem: 0, calesJour: 0, showsSem: 0, closesSem: 0, relHonJour: 0 });
+    callsJour: 0, callsSem: 0, calesJour: 0, showsSem: 0, closesSem: 0, relHonJour: 0, prosJour: 0 });
   const semaineDe = d => {
     const x = new Date(d + "T12:00:00");
     x.setDate(x.getDate() - ((x.getDay() + 6) % 7));
@@ -1778,12 +1961,20 @@ function calculeJeu() {
   // missions du jour / de la semaine : auto-vérifiées, le bonus compte dans le classement
   // (chacun a sa fiche même à zéro : les missions s'affichent dès le premier jour)
   if (MOI && MOI.role !== "observateur") joueur(MOI.nom);
+  // actions de prospection du jour, par personne
+  LEADS.forEach(l => {
+    if (!l.qui) return;
+    if (l.contacte_le === today) joueur(l.qui).prosJour++;
+    if (l.derniere_relance_le === today) joueur(l.qui).prosJour++;
+  });
+  const objPros = Math.max(1, Number(PARAMS.prospection_objectif) || 18);
   Object.values(J).forEach(j => {
     j.missions = MISSIONS_JOUR.concat(MISSIONS_SEM).map(m => {
-      const fait = Math.min(m.but, m.val(j));
-      const ok = fait >= m.but;
+      const but = m.id === "j0" ? objPros : m.but;
+      const fait = Math.min(but, m.val(j));
+      const ok = fait >= but;
       if (ok) { j.xpSemaine += m.xp; j.xpMois += m.xp; }
-      return { ...m, fait, ok };
+      return { ...m, but, fait, ok };
     });
   });
 
@@ -2390,6 +2581,14 @@ async function chargeRappels() {
         </div>
       </details>
       <details class="slot regl">
+        <summary>Prospection (objectif et relance auto)</summary>
+        <div class="row2">
+          <div class="field"><label>Objectif d'actions par jour et par personne (contacts + relances)</label>${pilule(IC_REG.temps, `<input type="number" id="prosObj" min="1" max="500" value="${PARAMS.prospection_objectif || 18}">`)}</div>
+          <div class="field"><label>Relance auto après un contact (jours)</label>${pilule(IC_REG.temps, `<input type="number" id="prosDelai" min="1" max="30" value="${PARAMS.prospection_relance_jours || 3}">`)}</div>
+        </div>
+        <div class="abtns"><button class="abtn oui" id="prosSave">Enregistrer</button></div>
+      </details>
+      <details class="slot regl">
         <summary>Affiches de l'accueil${ANNONCES.length ? " · " + ANNONCES.length + " en ligne" : " · aucune"}</summary>
         <div class="sinfo" style="margin-bottom:10px;color:var(--muted)">Le carrousel en haut du dashboard de toute l'équipe : l'affiche d'un call, le voyage à gagner, un événement. Avec image, ou juste un titre sur fond violet. 6 max.</div>
         ${ANNONCES.map(an => `
@@ -2461,6 +2660,16 @@ async function chargeRappels() {
         };
         img.onerror = () => reject(new Error("image illisible"));
         img.src = URL.createObjectURL(f);
+      });
+      el("prosSave").addEventListener("click", async () => {
+        try {
+          for (const [cle, val] of [["prospection_objectif", String(Math.max(1, Number(el("prosObj").value) || 18))], ["prospection_relance_jours", String(Math.max(1, Number(el("prosDelai").value) || 3))]]) {
+            await call("params_save", { cle, valeur: val });
+            PARAMS[cle] = val;
+          }
+          toast("Réglages de prospection enregistrés.");
+          render();
+        } catch (e) { toast("Ça n'a pas marché : " + e.message, "err"); }
       });
       el("anPublier").addEventListener("click", async () => {
         try {
@@ -2723,6 +2932,7 @@ async function loadData() {
     RECORDS = (d.calls || []).map(adapt);
     RDVS = d.rdvs || [];
     CORBEILLE = d.corbeille || [];
+    LEADS = d.leads || [];
     // les affiches ont changé côté serveur ? on recharge la config (images incluses)
     const idsServeur = (d.annonce_ids || []).join(",");
     const idsLocaux = ANNONCES.map(x => x.id).join(",");
@@ -2848,6 +3058,21 @@ async function init() {
   el("agAuj").addEventListener("click", () => { AGENDA_REF = Date.now(); renderAgenda(); });
   document.querySelectorAll(".agseg button").forEach(b => b.addEventListener("click", () => { AGENDA_MODE = b.dataset.agmode; renderAgenda(); }));
   el("agAjout").addEventListener("click", montreAjoutEvenement);
+  el("ldAjouter").addEventListener("click", async () => {
+    const b = el("ldAjouter");
+    if (b.classList.contains("busy")) return;
+    const handle = el("ldHandle").value.trim();
+    if (!handle) return toast("Le @ du compte est obligatoire.", "err");
+    b.classList.add("busy");
+    try {
+      const r = await call("lead_ajoute", { handle, abonnes: el("ldAbonnes").value.trim(), niche: el("ldNiche").value.trim(), note: el("ldNote").value.trim() });
+      ["ldHandle", "ldAbonnes", "ldNiche", "ldNote"].forEach(i2 => { el(i2).value = ""; });
+      toast("Lead ajouté ! Relance programmée dans " + r.relance_dans + " jours.");
+      el("ldHandle").focus();
+      await loadData();
+    } catch (e) { toast("Ça n'a pas marché : " + e.message, "err"); }
+    finally { b.classList.remove("busy"); }
+  });
   el("planType").addEventListener("change", () => { PLANTYPE = el("planType").value; render(); });
   el("planQui").addEventListener("change", () => { PLANFILTRE = el("planQui").value; render(); });
   let chercheT = null;
