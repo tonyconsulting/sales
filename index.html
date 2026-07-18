@@ -390,22 +390,6 @@
   .ld-m { font-size:11.5px; color:var(--muted); margin-top:2px; display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
   .ld .abtn { flex:none; }
 
-  /* Le carrousel d'affiches de l'accueil */
-  .caro { position:relative; border-radius:16px; overflow:hidden; margin-bottom:18px; width:100%; height:280px; border:1px solid var(--line); background:var(--cardbg); }
-  @media (max-width:700px) { .caro { height:auto; aspect-ratio:1/1; } }
-  .caro-s.portrait { background-size:contain; background-repeat:no-repeat; background-color:#1d1436; }
-  .caro-s { position:absolute; inset:0; opacity:0; transition:opacity .5s ease; background-size:cover; background-position:center; display:flex; align-items:flex-end; }
-  .caro-s.on { opacity:1; }
-  .caro-s.txt { background:linear-gradient(135deg, #2a1c54 0%, #131020 70%); align-items:center; justify-content:center; text-align:center; }
-  .caro-v { width:100%; padding:26px 22px 16px; background:linear-gradient(to top, rgba(6,4,12,.85), transparent); }
-  .caro-t { font-size:19px; font-weight:750; }
-  .caro-x { font-size:13px; color:#cfc9df; margin-top:2px; }
-  .caro-s.txt .caro-v { background:none; padding:20px; }
-  .caro-s.txt .caro-t { font-size:24px; }
-  .caro-dots { position:absolute; bottom:10px; right:14px; display:flex; gap:6px; z-index:3; }
-  .caro-dots i { width:7px; height:7px; border-radius:50%; background:rgba(255,255,255,.35); cursor:pointer; transition:background .2s; }
-  .caro-dots i.on { background:var(--accent); }
-  .caro[data-lien="1"] { cursor:pointer; }
 
   /* Le jeu : barres, classement, mur, rangs */
   .gbar { height:9px; background:#1e1930; border-radius:99px; overflow:hidden; margin:8px 0 4px; }
@@ -707,7 +691,6 @@
     </section>
     <section class="page" id="page-dashboard">
       <div id="bandeauRetard" style="display:none"></div>
-      <div id="annoncesZone"></div>
       <div class="grid3">
         <div class="card kpi">
           <div class="itile"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 11h18"/></svg></div>
@@ -824,7 +807,7 @@
   </main>
 </div>
 
-<script src="stats.js?v=40"></script>
-<script src="app.js?v=40"></script>
+<script src="stats.js?v=41"></script>
+<script src="app.js?v=41"></script>
 </body>
 </html>
