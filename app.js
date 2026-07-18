@@ -2177,6 +2177,37 @@ function renderJeu(s) {
       <div class="gbar"><i class="${gagne ? "ok" : ""}" style="width:${pct}%"></i></div>
     </div>`;
   } else dz.innerHTML = "";
+  // --- Le guide de démarrage : la checklist du nouveau, cochée toute seule
+  const gz = el("guideZone");
+  if (gz) {
+    const F5 = SalesStats.F;
+    const mesCalls = RECORDS.filter(r => r.fields[F5.qui] === MOI.nom || r.fields[F5.quiPres] === MOI.nom);
+    const ETAPES = [
+      { txt: "Active tes notifications", ok: typeof Notification !== "undefined" && Notification.permission === "granted", page: "planning" },
+      { txt: "Mets ta photo de profil", ok: !!AVATARS[MOI.nom], profil: true },
+      { txt: "Complète ton profil (mail ou téléphone)", ok: !!(MOI.email || MOI.telephone), profil: true },
+      { txt: "Ajoute ton premier lead", ok: mesLeads().length > 0, page: "prospection" },
+      { txt: "Logge ton premier call", ok: mesCalls.length > 0, page: "log" },
+      { txt: "Cale ton premier setting", ok: mesCalls.some(r => ["Calé (à venir)", "RDV de vente calé"].includes(r.fields[F5.resSetting])), page: "log" },
+    ];
+    const faits = ETAPES.filter(e2 => e2.ok).length;
+    const fini = faits === ETAPES.length;
+    const cache = MOI.role === "admin" || MOI.role === "observateur" || fini;
+    gz.innerHTML = cache ? "" : `<div class="pzone" style="margin-top:16px;border-color:var(--accent)">
+      <h3><span class="kdot" style="background:var(--accent)"></span>Ton démarrage<span class="knb">${faits} / ${ETAPES.length}</span></h3>
+      <div class="gbar" style="margin-bottom:10px"><i style="width:${Math.round(faits / ETAPES.length * 100)}%"></i></div>
+      ${ETAPES.map((e2, i) => `<div class="clig" style="cursor:${e2.ok ? "default" : "pointer"}" ${e2.ok ? "" : `data-guide="${i}"`}>
+        <span class="cpos" style="${e2.ok ? "background:rgba(52,211,153,.16);color:#34d399" : ""}">${e2.ok ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>' : i + 1}</span>
+        <span style="${e2.ok ? "color:var(--muted);text-decoration:line-through" : ""}">${e2.txt}</span>
+        ${e2.ok ? "" : `<span class="cxp" style="font-size:12px;color:var(--accent)">Faire</span>`}
+      </div>`).join("")}
+    </div>`;
+    gz.querySelectorAll("[data-guide]").forEach(x => x.addEventListener("click", () => {
+      const e2 = ETAPES[Number(x.dataset.guide)];
+      if (e2.profil) montreProfil();
+      else if (e2.page) showPage(e2.page);
+    }));
+  }
   // --- Tes missions (auto-vérifiées, le bonus compte dans le classement)
   const mz0 = el("missionsZone");
   const moiJ0 = jeu.joueurs[MOI.nom];
