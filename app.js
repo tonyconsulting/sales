@@ -3241,7 +3241,7 @@ async function init() {
   el("inInsta").addEventListener("change", autofillDepuisInsta);
   resetForm();
   setType("Setting");
-  showPage(MOI.role === "admin" || MOI.role === "observateur" ? "dashboard" : "log");
+  showPage("dashboard");
   document.querySelectorAll("#nav button").forEach(b => b.addEventListener("click", () => { showPage(b.dataset.page); fermeTiroir(); }));
   document.querySelectorAll("#typeBtns button").forEach(b => b.addEventListener("click", () => setType(b.dataset.t)));
   ["inResSetting", "inCause", "inResVente", "inRelSet", "inRelNs", "inRelPc", "inRelNsV"].forEach(i => el(i).addEventListener("change", majConditionnels));
@@ -3296,6 +3296,36 @@ async function init() {
   initNotifs().catch(() => {});
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { debloqueAudio(); loadData(); } });
   await loadData();
+  montreAccueil();
   setInterval(() => { if (document.visibilityState === "visible") loadData(); }, 10 * 60 * 1000);
+}
+
+// L'écran de bienvenue : une seule fois, à la première connexion d'un membre
+function montreAccueil() {
+  if (MOI.role !== "membre") return;
+  if ((MOI.onboarding || {}).accueil) return;
+  const F6 = SalesStats.F;
+  const dejaActif = RECORDS.some(r => r.fields[F6.qui] === MOI.nom || r.fields[F6.quiPres] === MOI.nom) || mesLeads().length > 0;
+  if (dejaActif) return;
+  const ov = el("accueilOverlay");
+  if (!ov) return;
+  ov.innerHTML = `<div class="offre-carte" style="text-align:center;max-width:420px;margin-top:14vh">
+    <div class="logo" style="padding:0">KAIRÓ<span>Σ</span></div>
+    <div class="logosub" style="padding:2px 0 18px">NEW ERA</div>
+    <div class="offre-titre" style="font-size:22px">Bienvenue, ${esc(MOI.nom)}.</div>
+    <div class="offre-infos" style="margin-top:10px">Ici tu logges tes calls, tu prospectes et tu vois tes résultats en vrai.
+    Tes premières missions t'attendent sur ton dashboard : elles se cochent toutes seules au fur et à mesure.</div>
+    <div class="offre-actions" style="justify-content:center;margin-top:20px">
+      <button class="abtn oui" id="accueilGo" style="min-width:180px">C'est parti</button>
+    </div>
+  </div>`;
+  ov.style.display = "";
+  el("accueilGo").addEventListener("click", () => {
+    ov.style.display = "none";
+    ov.innerHTML = "";
+    MOI.onboarding = { ...(MOI.onboarding || {}), accueil: true };
+    call("guide_coche", { etape: "accueil" }).catch(() => { /* réaffichable */ });
+    showPage("dashboard");
+  });
 }
 init();
