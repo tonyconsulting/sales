@@ -440,6 +440,16 @@
     color:#191322; font-size:9px; font-weight:750; border-radius:99px; padding:1.5px 6px; line-height:1.25; white-space:nowrap; }
   .ptopm { position:relative; }
   @media (max-width:860px) { #profilTop { display:none; } }
+  .acc-dots { display:flex; gap:7px; justify-content:center; margin-top:18px; }
+  .acc-dots i { width:7px; height:7px; border-radius:50%; background:var(--line); transition:background .2s; }
+  .acc-dots i.on { background:var(--accent); }
+  .acc-ligne { display:flex; align-items:center; gap:12px; text-align:left; padding:9px 0; border-bottom:1px solid var(--line); }
+  .acc-ligne:last-child { border-bottom:none; }
+  .acc-ligne svg { flex:none; color:var(--accent); }
+  .acc-ligne b { font-size:14.5px; }
+  .acc-ligne span { display:block; font-size:12.5px; color:var(--muted); margin-top:1px; }
+  .flashG { animation: flashG 1.5s ease 2; }
+  @keyframes flashG { 0%, 100% { box-shadow:none; } 50% { box-shadow:0 0 0 3px var(--accent-dim), 0 0 26px rgba(167,139,250,.32); } }
 </style>
 </head>
 <body>
@@ -836,7 +846,7 @@
   </main>
 </div>
 
-<script src="stats.js?v=47"></script>
-<script src="app.js?v=47"></script>
+<script src="stats.js?v=48"></script>
+<script src="app.js?v=48"></script>
 </body>
 </html>
