@@ -1990,7 +1990,7 @@ function calculeJeu() {
   const debutMois = today.slice(0, 8) + "01";
   const J = {};
   const joueur = n => J[n] || (J[n] = { xpTotal: 0, xpSemaine: 0, xpMois: 0, xpSemPrec: 0, jours: new Set(), grosseVente: 0, encParSemaine: {}, serie: 0, serieMax: 0,
-    callsJour: 0, callsSem: 0, calesJour: 0, showsSem: 0, closesSem: 0, relHonJour: 0, prosJour: 0 });
+    callsJour: 0, callsSem: 0, calesJour: 0, calesSem: 0, showsSem: 0, closesSem: 0, encSem: 0, relHonJour: 0, prosJour: 0 });
   const semaineDe = d => {
     const x = new Date(d + "T12:00:00");
     x.setDate(x.getDate() - ((x.getDay() + 6) % 7));
@@ -2024,6 +2024,7 @@ function calculeJeu() {
     }
     if (type === "Setting") {
       const res = f[F.resSetting];
+      if (qui && d >= debutSemaine && (res === "Calé (à venir)" || res === "RDV de vente calé")) joueur(qui).calesSem++;
       if (res === "Calé (à venir)") crediter(qui, d, XP.setting_cale);
       else if (res === "Non abouti") crediter(qui, d, XP.setting_show);
       else if (res === "RDV de vente calé") crediter(qui, d, XP.rdv_vente_cale);
@@ -2043,6 +2044,7 @@ function calculeJeu() {
     // l'argent réellement arrivé (comptant direct ou R2/paiement) : le jackpot
     const enc = Number(f[F.encaisse]) || 0;
     if (enc > 0 && qui) {
+      if (d >= debutSemaine) joueur(qui).encSem += enc;
       crediter(qui, d, XP.encaissement);
       const sm = semaineDe(d);
       const j = joueur(qui);
@@ -2144,6 +2146,7 @@ const tempsRelatif = t => {
 };
 
 let CLASSEMENT_MODE = "semaine";
+let CLASSEMENT_LENTILLE = "general";
 function renderJeu(s) {
   if (!el("classementZone")) return;
   const jeu = calculeJeu();
@@ -2234,10 +2237,17 @@ function renderJeu(s) {
   }
   // --- Classement
   const cz = el("classementZone");
+  const LENTILLES = {
+    general: { lbl: "Général", tri: (p, q) => (CLASSEMENT_MODE === "semaine" ? q.xpSemaine - p.xpSemaine : q.xpMois - p.xpMois), val: j => (CLASSEMENT_MODE === "semaine" ? j.xpSemaine : j.xpMois).toLocaleString("fr-FR") + " XP" },
+    setters: { lbl: "Setters", tri: (p, q) => (q.calesSem + q.showsSem) - (p.calesSem + p.showsSem), val: j => j.calesSem + " calés · " + j.showsSem + " effectués" },
+    closers: { lbl: "Closers", tri: (p, q) => q.encSem - p.encSem || q.closesSem - p.closesSem, val: j => j.closesSem + " closés · " + eur(j.encSem) },
+    assidus: { lbl: "Régularité", tri: (p, q) => q.serie - p.serie || q.jours.size - p.jours.size, val: j => j.serie + " j de série · " + j.jours.size + " j actifs" },
+  };
+  const lentille = LENTILLES[CLASSEMENT_LENTILLE] || LENTILLES.general;
   const joueurs = Object.entries(jeu.joueurs)
     .filter(([nom]) => nomsEquipe.has(nom))
     .map(([nom, j]) => ({ nom, ...j }))
-    .sort((p, q) => (CLASSEMENT_MODE === "semaine" ? q.xpSemaine - p.xpSemaine : q.xpMois - p.xpMois));
+    .sort(lentille.tri);
   const avecPoints = joueurs.filter(j => j.xpTotal > 0);
   cz.innerHTML = avecPoints.length ? `<div class="pzone" style="margin-top:16px">
     <h3><span class="kdot" style="background:var(--accent)"></span>${CLASSEMENT_MODE === "semaine" ? "Classement de la semaine" : "Saison de " + MOIS_NOMS[new Date().getMonth()]}
@@ -2245,20 +2255,23 @@ function renderJeu(s) {
         <button data-cl="semaine" ${CLASSEMENT_MODE === "semaine" ? 'class="active"' : ""} style="padding:5px 12px;font-size:12px">Semaine</button>
         <button data-cl="mois" ${CLASSEMENT_MODE === "mois" ? 'class="active"' : ""} style="padding:5px 12px;font-size:12px">Saison</button>
       </span></span></h3>
+    <div class="agseg" style="margin:2px 0 8px;align-self:flex-start;display:inline-flex">
+      ${Object.entries(LENTILLES).map(([k, v]) => `<button data-lentille="${k}" ${CLASSEMENT_LENTILLE === k ? 'class="active"' : ""} style="padding:5px 12px;font-size:12px">${v.lbl}</button>`).join("")}
+    </div>
     ${joueurs.map((j, i) => {
-      const xp = CLASSEMENT_MODE === "semaine" ? j.xpSemaine : j.xpMois;
-      const delta = CLASSEMENT_MODE === "semaine" && j.xpSemPrec > 0 && j.xpSemaine > j.xpSemPrec
+      const delta = CLASSEMENT_LENTILLE === "general" && CLASSEMENT_MODE === "semaine" && j.xpSemPrec > 0 && j.xpSemaine > j.xpSemPrec
         ? Math.round((j.xpSemaine - j.xpSemPrec) / j.xpSemPrec * 100) : 0;
       return `<div class="clig">
         <span class="cpos ${i === 0 ? "p1" : i === 1 ? "p2" : i === 2 ? "p3" : ""}">${i + 1}</span>
         <span>${avi(j.nom)}<span class="crang">${rangDe(j.xpTotal)} · ${j.xpTotal.toLocaleString("fr-FR")} XP au total</span></span>
         ${j.serie >= 2 ? `<span class="cserie">${IC_ECLAIR}${j.serie} j</span>` : ""}
         ${delta > 0 && i >= 3 ? `<span class="cdelta">+${delta} % vs ta semaine passée</span>` : ""}
-        <span class="cxp">${xp.toLocaleString("fr-FR")} XP</span>
+        <span class="cxp" style="font-size:13px">${lentille.val(j)}</span>
       </div>`;
     }).join("")}
   </div>` : "";
   cz.querySelectorAll("[data-cl]").forEach(b => b.addEventListener("click", () => { CLASSEMENT_MODE = b.dataset.cl; render(); }));
+  cz.querySelectorAll("[data-lentille]").forEach(b => b.addEventListener("click", () => { CLASSEMENT_LENTILLE = b.dataset.lentille; render(); }));
   // --- Records perso (vue Moi)
   const rz = el("recordsZone");
   const moiJ = jeu.joueurs[MOI.nom];
@@ -2660,6 +2673,11 @@ async function chargeRappels() {
         </div>
         <div class="row2">
           <div class="field"><label>Équipe</label>${pilule(IC_REG.qui, `<select class="mq-eq"><option value="kelian"${m.equipe === "kelian" ? " selected" : ""}>Team Kélian</option><option value="mila"${m.equipe === "mila" ? " selected" : ""}>Team Mila</option></select>`)}</div>
+          <div class="field"><label>Interface (débutant = léger, on ouvre quand il monte)</label>${pilule(IC_REG.etat, `<select class="mq-int">
+            <option value="simple"${(m.interface || "complet") === "simple" ? " selected" : ""}>Simple — prospection, log, planning, relances</option>
+            <option value="normal"${m.interface === "normal" ? " selected" : ""}>Normal — + agenda, prospects, appels</option>
+            <option value="complet"${(m.interface || "complet") === "complet" ? " selected" : ""}>Complet — tout, KPI compris</option>
+          </select>`)}</div>
           <div class="field"><label>Commission (% de l'encaissé, vide = pas affichée)</label>${pilule(IC_REG.temps, `<input type="number" class="mq-taux" min="0" max="99" step="1" value="${m.taux_commission ? Math.round(m.taux_commission * 100) : ""}">`)}</div>
         </div>`}
         ${m.nom_famille || m.email || m.telephone ? `<div class="sinfo" style="margin-bottom:10px">${[m.nom_famille ? esc(m.nom + " " + m.nom_famille) : "", m.email ? esc(m.email) : "", m.telephone ? esc(m.telephone) : ""].filter(Boolean).join(" · ")}</div>` : ""}
@@ -2763,6 +2781,7 @@ async function chargeRappels() {
       const rv = sl.querySelector(".mq-rolev"); if (rv) corps.role_vente = rv.value;
       const rf = sl.querySelector(".mq-ref"); if (rf) corps.referent = rf.value === "oui";
       const eq = sl.querySelector(".mq-eq"); if (eq) corps.equipe = eq.value;
+      const it = sl.querySelector(".mq-int"); if (it) corps.interface = it.value;
       const tx = sl.querySelector(".mq-taux"); if (tx) corps.taux_commission = tx.value ? Number(tx.value) / 100 : 0;
       const of2 = sl.querySelector(".mq-off"); if (of2) corps.off_jusqu_au = of2.value || null;
       try { await call("membre_maj", corps); b.textContent = "Enregistré"; setTimeout(() => chargeRappels(), 700); }
@@ -3055,6 +3074,19 @@ async function init() {
     document.querySelector('#nav button[data-page="log"]').style.display = "none";
     el("fVueEquipe").style.display = "";
     el("vueEquipe").addEventListener("change", () => { VUEQUIPE = el("vueEquipe").value; render(); });
+  }
+  // Interface progressive : un débutant voit l'essentiel, le reste s'ouvre quand Tony le fait monter
+  const NIVEAUX_CACHES = {
+    simple: ["pipeline", "prospects", "agenda", "appels", "kpi"],
+    normal: ["pipeline", "kpi"],
+    complet: [],
+  };
+  if (MOI.role !== "admin" && MOI.role !== "observateur") {
+    const caches = NIVEAUX_CACHES[MOI.interface] || [];
+    caches.forEach(pg => {
+      const b = document.querySelector(`#nav button[data-page="${pg}"]`);
+      if (b) b.style.display = "none";
+    });
   }
   el("burger").addEventListener("click", () => { el("sideNav").classList.add("open"); el("navOverlay").classList.add("on"); });
   el("navOverlay").addEventListener("click", fermeTiroir);
