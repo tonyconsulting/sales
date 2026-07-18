@@ -275,6 +275,7 @@
         type: estVente(r) ? "Vente" : "Setting",
         source: st[k].source || f[F.source] || "",
         categorie,
+        callId: r.id,
         echange: dateOf(r)
       };
     });
