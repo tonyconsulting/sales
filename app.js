@@ -54,18 +54,40 @@ const MSG_RELANCE = {
   "Réfléchit": "Coucou {prenom} ! Tu voulais prendre le temps d'y réfléchir après notre échange, ce que je comprends. Tu en es où ?",
   "À rappeler": "Coucou {prenom} ! Comme convenu je reviens vers toi suite à notre échange. C'est toujours ok pour qu'on s'appelle ?",
   "À relancer": "Coucou {prenom} ! Comme convenu on se recontacte suite à notre appel. Toujours partant ? Dis-moi tes dispos.",
-  "Pas intéressé": "Coucou {prenom} ! On s'était parlé {date}, je voulais prendre de tes nouvelles. Si les choses ont bougé de ton côté, je suis là.",
-  confirmation: "Coucou {prenom} ! On se retrouve {date} pour notre appel. Tu me confirmes que c'est toujours bon pour toi ?",
+  "Pas intéressé": "Coucou {prenom} ! La dernière fois tu m'avais dit que ce n'était pas pour toi, et je le respecte. Je te fais juste signe au cas où ta situation aurait changé depuis {date}. Si c'est toujours non, dis-le-moi et je ne reviendrai plus vers toi.",
+  confirmation: "Coucou {prenom} ! On se retrouve {date} pour notre appel, je t'appelle ici sur Insta. Réponds-moi juste OK pour que je te garde le créneau, et note d'ici là les 2 trucs que tu veux débloquer. Si tu as un imprévu, dis-le-moi maintenant et on recale, ça ne pose aucun problème.",
+  recap_rdv: "Top {prenom}, c'est calé ! On s'appelle {date}, je t'appelle ici sur Insta. Prévois 30 min au calme. Si tu as un imprévu d'ici là, dis-le-moi ici et on recale, pas de souci.",
+  rappel_jour_j: "{prenom}, on se retrouve tout à l'heure comme prévu ! Je t'appelle ici sur Insta, prévois un endroit calme et de quoi noter. À tout de suite.",
+  post_appel: "Merci pour ton temps aujourd'hui {prenom} ! Je te pose tout par écrit pour que tu décides tranquillement : [OFFRE - MONTANT - CE QUI EST INCLUS]. Comme convenu, on se reparle [JOUR]. Si une question te trotte en tête d'ici là, envoie-la ici, je te réponds direct.",
+  confirmation_r2: "Coucou {prenom} ! On se retrouve {date} pour finaliser ton inscription comme prévu, et te lancer dans la foulée. Petit truc qui nous fera gagner du temps : vérifie d'ici là auprès de ta banque que le virement peut passer (plafond). S'il faut ajuster quoi que ce soit, dis-le-moi ici.",
+  bienvenue: "Bienvenue {prenom} ! Ton paiement est bien passé, tout est carré. Je te récapitule : [OFFRE - MONTANT - DATE DE DÉMARRAGE]. Première étape : [PREMIÈRE ACTION CONCRÈTE]. La moindre question d'ici là, écris-moi ici, je suis dispo.",
+  premier_dm: "Coucou {prenom} ! Je suis tombé sur ton profil via [OÙ]. J'aime ce que tu fais, et je pense qu'on peut t'aider à [PROMESSE]. Partante pour en parler 2 min ici ?",
+  lead_muet: "Coucou {prenom} ! Je t'avais écrit il y a quelques jours, je pense que mon message s'est perdu dans la masse. Je te le remets ici : [TON MESSAGE]. Dis-moi si c'est un sujet pour toi.",
   defaut: "Coucou {prenom} ! Je reviens vers toi suite à notre dernier échange. Dis-moi quand tu es dispo pour qu'on s'appelle."
 };
 let MSG_SRV = {}; // textes modifiés par Tony dans Réglages (config serveur)
 let PARAMS = {};  // scripts et réponses aux objections (Réglages, onglet Scripts)
-const msgRelance = r => (MSG_SRV[r.categorie] || MSG_RELANCE[r.categorie] || MSG_SRV.defaut || MSG_RELANCE.defaut)
-  .replace("{prenom}", (r.prospect || "").trim().split(/\s+/)[0] || "")
-  .replace("{date}", r.echange ? jolieDate(r.echange, SalesStats.ymdLocal(new Date())) : "récemment");
+const remplitBalises = (txt, prenom, date) => String(txt || "")
+  .replaceAll("{prenom}", prenom || "")
+  .replaceAll("{date}", date || "");
+const msgRelance = r => remplitBalises(
+  MSG_SRV[r.categorie] || MSG_RELANCE[r.categorie] || MSG_SRV.defaut || MSG_RELANCE.defaut,
+  (r.prospect || "").trim().split(/\s+/)[0] || "",
+  r.echange ? jolieDate(r.echange, SalesStats.ymdLocal(new Date())) : "récemment");
+const msgCategorie = (cat, prenom, date) => remplitBalises(MSG_SRV[cat] || MSG_RELANCE[cat] || "", prenom, date);
 
-const CATS_MSG = ["No-show", "Pas intéressé", "Pas le budget", "Réfléchit", "À rappeler", "À relancer", "confirmation", "defaut"];
-const CAT_LABEL = { confirmation: "Confirmation de RDV (bouton du planning)", defaut: "Autres cas (Non qualifié, Autre...)" };
+const CATS_MSG = ["premier_dm", "lead_muet", "recap_rdv", "confirmation", "rappel_jour_j", "post_appel", "bienvenue", "confirmation_r2", "No-show", "Pas intéressé", "Pas le budget", "Réfléchit", "À rappeler", "À relancer", "defaut"];
+const CAT_LABEL = {
+  premier_dm: "Premier DM (bouton de la prospection)",
+  lead_muet: "Relance d'un lead muet (prospection ; astuce : supprimer le DM et le renvoyer le fait remonter)",
+  recap_rdv: "Récap juste après le calage (proposé après le log)",
+  confirmation: "Confirmation de la veille (bouton du planning)",
+  rappel_jour_j: "Rappel du jour J (bouton du planning le jour même)",
+  post_appel: "Après un appel sans décision (proposé après le log)",
+  bienvenue: "Bienvenue juste après le paiement (proposé après le log)",
+  confirmation_r2: "Confirmation avant un R2 d'encaissement",
+  defaut: "Autres cas (Non qualifié, Autre...)",
+};
 // Pilules de réglage (même style que la barre de filtres)
 const IC_REG = {
   qui: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c0-3.5 3-5.5 7-5.5s7 2 7 5.5"/></svg>',
@@ -88,7 +110,10 @@ const NOTIFS_CATALOGUE = [
   { cle: "horaire_confirme", label: "Horaire confirmé (à celui qui a proposé)", balises: "{prospect} {quand}", defaut: ["Horaire confirmé", "{prospect} est confirmé {quand}."] },
   { cle: "vente_closee", label: "Vente closée (à toi)", balises: "{montant}", defaut: ["Order !", "{montant}, 1 vente by K.NE"] },
   { cle: "debrief", label: "Débrief coaching (au vendeur du call)", balises: "{qui} {prospect}", defaut: ["Débrief de {qui}", "Sur ton call avec {prospect}. Ouvre la page Appels pour le lire."] },
-  { cle: "encaissement", label: "Argent du R2 reçu (à toi)", balises: "{montant} {prospect}", defaut: ["Argent reçu", "{montant} encaissé pour {prospect}."] }
+  { cle: "encaissement", label: "Argent du R2 reçu (à toi)", balises: "{montant} {prospect}", defaut: ["Argent reçu", "{montant} encaissé pour {prospect}."] },
+  { cle: "matin_rdv", label: "Matin 9 h — RDV du jour pas confirmé (au setter, 11 h à toi)", balises: "{prospect} {quand}", defaut: ["RDV aujourd'hui pas confirmé", "{prospect}, {quand} — relance-le ou recale."] },
+  { cle: "matin_pros", label: "Matin 9 h — la prospection qui attend", balises: "{n}", defaut: ["Ta prospection du jour", "{n} lead(s) t'attendent : relances à faire ou réponses à traiter."] },
+  { cle: "deplace", label: "RDV déplacé (au setter : préviens le prospect)", balises: "{prospect} {quand} {nouveau}", defaut: ["RDV déplacé", "{prospect} passe de {quand} à {nouveau}. Préviens-le et refais-le confirmer."] }
 ];
 
 // Options des menus « Résultat… » rapides (prospects + retards)
@@ -287,10 +312,10 @@ function renderPlanning(today) {
   const seuilRetard = new Date(Date.now() - 48 * 3600 * 1000).toISOString();
   const aLogger = mesConfirmes.filter(r => jourLocal(r.quand) <= today && r.quand >= seuilRetard);
   const aVenir = mesConfirmes.filter(r => jourLocal(r.quand) > today);
-  const confHTML = r => r.type !== "Vente" ? "" : (r.confirme_prospect
+  const confHTML = r => r.type === "Perso" ? "" : (r.confirme_prospect
     ? `<div class="sinfo" style="color:var(--accent)">Confirmé par le prospect</div>`
     : `<div class="abtns" style="margin-bottom:10px">
-        <button class="abtn" data-act="copie-conf" data-id="${r.id}" data-nom="${esc(r.prospect)}" data-quand="${r.quand}">Copier le message de confirmation</button>
+        <button class="abtn" data-act="copie-conf" data-id="${r.id}" data-nom="${esc(r.prospect)}" data-quand="${r.quand}" data-cat="${r.type === "R2" ? "confirmation_r2" : jourLocal(r.quand) === today ? "rappel_jour_j" : "confirmation"}">${r.type === "R2" ? "Copier le message R2" : jourLocal(r.quand) === today ? "Copier le rappel du jour J" : "Copier le message de confirmation"}</button>
         <button class="abtn oui" data-act="conf-prospect" data-id="${r.id}">Le prospect a confirmé</button>
       </div>`);
   const prisHTML = r => r.pris_en_s ? `<div class="sinfo" style="font-size:12px">${formatDelaiPrise(r.pris_en_s)}</div>` : "";
@@ -401,9 +426,9 @@ function renderPlanning(today) {
         return;
       }
       if (act === "copie-conf") {
-        const msg = (MSG_SRV.confirmation || MSG_RELANCE.confirmation)
-          .replace("{prenom}", (b.dataset.nom || "").trim().split(/\s+/)[0] || "")
-          .replace("{date}", quandJoli(b.dataset.quand, SalesStats.ymdLocal(new Date())));
+        const msg = msgCategorie(b.dataset.cat || "confirmation",
+          (b.dataset.nom || "").trim().split(/\s+/)[0] || "",
+          quandJoli(b.dataset.quand, SalesStats.ymdLocal(new Date())));
         try { await navigator.clipboard.writeText(msg); b.textContent = "Copié, colle-le en DM"; setTimeout(() => { b.textContent = "Copier le message de confirmation"; }, 2000); }
         catch (_) { copieManuelle(msg, "Copie le message"); }
         return;
@@ -699,6 +724,7 @@ function render() {
     }));
   }
 
+  window.__RELANCES_IDX = s.relances;
   el("relances").innerHTML = s.relances.length
     ? tableHTML(
         [{ t: "Pour le" }, { t: "Prospect" }, { t: "Contact" }, { t: "Catégorie" }, { t: "Source" }, { t: "Qui" }, { t: "Notes" }, { t: "" }],
@@ -708,7 +734,7 @@ function render() {
           { t: `<span class="pill amber">${esc(r.categorie || "–")}</span>` + (r.echange ? `<div style="color:var(--muted);font-size:11px;margin-top:3px">échange du ${esc(jolieDate(r.echange, s.today))}</div>` : "") },
           { t: esc(r.source || "–") }, { t: avi(r.qui) },
           { t: r.notes ? `<details><summary>voir</summary><div>${esc(r.notes)}</div></details>` : "" },
-          { t: MOI.role === "observateur" ? "" : `<button class="abtn rel-copie" data-msg="${esc(msgRelance(r))}">Copier le message</button> <button class="abtn oui rel-log" data-nom="${esc(r.prospect)}" data-contact="${esc(r.contact)}" data-type="${r.type === "Vente" ? "Vente" : "Setting"}" data-source="${esc(r.source || "")}">Log le résultat</button>` }
+          { t: MOI.role === "observateur" ? "" : `<button class="abtn rel-copie" data-msg="${esc(msgRelance(r))}">Copier le message</button> <button class="abtn rel-reporte" data-cid="${esc(r.callId || "")}">DM envoyé</button> <button class="abtn oui rel-log" data-nom="${esc(r.prospect)}" data-contact="${esc(r.contact)}" data-type="${r.type === "Vente" ? "Vente" : "Setting"}" data-source="${esc(r.source || "")}">Log le résultat</button>` }
         ]))
     : `<div class="empty">Aucune relance en attente.</div>`;
   document.querySelectorAll(".rel-copie").forEach(b => b.addEventListener("click", async () => {
@@ -718,6 +744,7 @@ function render() {
       setTimeout(() => { b.textContent = t; }, 2000);
     } catch (_) { copieManuelle(b.dataset.msg, "Copie le message"); }
   }));
+  document.querySelectorAll(".rel-reporte").forEach(b => b.addEventListener("click", () => montreReporte(b.dataset.cid)));
   document.querySelectorAll(".rel-log").forEach(b => b.addEventListener("click", () => {
     showPage("log"); resetForm(); setType(b.dataset.type);
     el("inProspect").value = b.dataset.nom === "?" ? "" : b.dataset.nom;
@@ -768,6 +795,56 @@ function render() {
     ? tableHTML([{ t: "Closer" }, { t: "RDV pris", n: 1 }, { t: "Temps médian de prise", n: 1 }],
         dispArr.map(([nom2, arr]) => [{ t: avi(nom2) }, { t: arr.length, n: 1 }, { t: formatDelaiPrise(medi(arr)).replace("pris ", ""), n: 1 }]))
     : `<div class="empty">Aucun RDV dispatché pris sur la période.</div>`;
+
+  // Show selon le délai entre le calage et le RDV (le no-show adore la distance)
+  {
+    const F4 = SalesStats.F;
+    const paires = [];
+    const parCle4 = {};
+    recsVisibles().forEach(r => {
+      const k = SalesStats.keyOf(r);
+      if (k) (parCle4[k] = parCle4[k] || []).push(r);
+    });
+    Object.values(parCle4).forEach(liste => {
+      liste.forEach(r => {
+        const f = r.fields;
+        if (f[F4.type] !== "Setting" || f[F4.resSetting] !== "Calé (à venir)" || !f[F4.rdvLe] || !r.createdTime) return;
+        const delaiH = (new Date(f[F4.rdvLe]) - new Date(r.createdTime)) / 3600000;
+        if (delaiH < 0) return;
+        const resultat = liste.find(r2 => r2 !== r && f2Res(r2.fields) && SalesStats.dateOf(r2) >= SalesStats.dateOf(r));
+        if (!resultat) return;
+        paires.push({ delaiH, show: f2Res(resultat.fields) !== "No-show" });
+      });
+    });
+    function f2Res(f) {
+      return ["No-show", "Non abouti", "RDV de vente calé"].includes(f[F4.resSetting]) ? f[F4.resSetting] : null;
+    }
+    const tranches = [["Moins de 24 h", p => p.delaiH < 24], ["24 à 72 h", p => p.delaiH >= 24 && p.delaiH < 72], ["Plus de 72 h", p => p.delaiH >= 72]];
+    const lignes4 = tranches.map(([lbl, fn]) => {
+      const grp = paires.filter(fn);
+      return [{ t: lbl }, { t: grp.length, n: 1 }, { t: grp.length ? Math.round(grp.filter(p => p.show).length / grp.length * 100) + " %" : "–", n: 1 }];
+    });
+    el("showDelai").innerHTML = paires.length
+      ? tableHTML([{ t: "Setting calé à..." }, { t: "Settings", n: 1 }, { t: "Show", n: 1 }], lignes4) +
+        `<div class="sinfo" style="margin-top:6px;color:var(--muted)">Référence du métier : ~80 % de show à moins de 24 h, ~60 % au-delà de 3 jours. Cale au plus près.</div>`
+      : `<div class="empty">Dès les premiers settings calés, tu verras ici si la distance tue ton show.</div>`;
+  }
+  // Les R2 : qui encaisse vraiment ses ventes
+  {
+    const parCloser5 = {};
+    rdvsVisibles().forEach(r => {
+      if (r.type !== "R2" || !r.assigne_a) return;
+      const p = parCloser5[r.assigne_a] = parCloser5[r.assigne_a] || { n: 0, faits: 0, attendu: 0, recu: 0 };
+      p.n++;
+      p.attendu += Number(r.montant_attendu) || 0;
+      if (r.statut === "fait") { p.faits++; p.recu += Number(r.montant_attendu) || 0; }
+    });
+    const noms5 = Object.keys(parCloser5);
+    el("r2Closer").innerHTML = noms5.length
+      ? tableHTML([{ t: "Closer" }, { t: "R2", n: 1 }, { t: "Encaissés", n: 1 }, { t: "Taux", n: 1 }, { t: "Reçu / attendu", n: 1 }],
+          noms5.map(n5 => { const p = parCloser5[n5]; return [{ t: avi(n5) }, { t: p.n, n: 1 }, { t: p.faits, n: 1 }, { t: Math.round(p.faits / p.n * 100) + " %", n: 1 }, { t: eur(p.recu) + " / " + eur(p.attendu), n: 1 }]; }))
+      : `<div class="empty">Aucun R2 pour l'instant — c'est plutôt bon signe.</div>`;
+  }
 
   if (el("bilanZone")) {
     if (MOI.role === "admin") {
@@ -1219,6 +1296,14 @@ function majConditionnels() {
   ["Set", "Ns", "Pc", "NsV"].forEach(p => {
     el("fRel" + p + "Date").style.display = el("inRel" + p).value === "date" ? "" : "none";
   });
+  // Un « Pas intéressé » ne se relance jamais à 3 jours : 1 mois minimum
+  [["inCause", "inRelSet"], ["inCauseV", "inRelPc"]].forEach(([cId, rId]) => {
+    const pasInteresse = el(cId).value === "Pas intéressé";
+    [...el(rId).options].forEach(o => {
+      if (["0", "1", "3", "7", "14"].includes(o.value)) o.hidden = pasInteresse;
+    });
+    if (pasInteresse && ["0", "1", "3", "7", "14"].includes(el(rId).value)) el(rId).value = "30";
+  });
 }
 // Sélecteur de relance -> date (AAAA-MM-JJ) ; null = date précise manquante
 function dateRelanceDepuis(pfx) {
@@ -1242,7 +1327,13 @@ function majJourHint(inputId, hintId) {
     .sort((p, q) => p.quand.localeCompare(q.quand));
   if (!jour.length) { hint.style.display = ""; hint.innerHTML = `Ce jour-là : personne n'a encore de RDV.`; return; }
   hint.style.display = "";
-  hint.innerHTML = `Déjà au planning ce jour-là :<br>` + jour.map(r => {
+  const delaiH0 = (tChoisi - Date.now()) / 3600000;
+  const avisDelai = delaiH0 < 0 ? "" : delaiH0 < 24
+    ? `<span style="color:#34d399">Créneau chaud (moins de 24 h) : le show est maximal.</span><br>`
+    : delaiH0 < 72
+      ? `<span style="color:var(--warn)">À ${Math.round(delaiH0 / 24)} jours : pense au message de confirmation.</span><br>`
+      : `<span class="late">À plus de 3 jours, le show s'effondre — essaie de caler plus tôt.</span><br>`;
+  hint.innerHTML = avisDelai + `Déjà au planning ce jour-là :<br>` + jour.map(r => {
     const proche = Math.abs(new Date(r.quand).getTime() - tChoisi) <= 45 * 60000;
     return `<span ${proche ? 'class="late"' : ""}>${heureLocale(r.quand)} · ${esc(r.type)} · ${r.assigne_a ? esc(r.assigne_a) : "à prendre"}${proche ? " — ça se chevauche" : ""}</span>`;
   }).join("<br>");
@@ -1262,6 +1353,8 @@ function resetForm() {
   el("inQualifObjection").value = "Aucune";
   el("inObjection").value = "Aucune";
   el("inEncaisseSel").value = "oui";
+  el("inRelNs").value = "0";
+  el("inRelNsV").value = "0";
   majChips();
   majConditionnels();
 }
@@ -1370,6 +1463,16 @@ async function submitForm(e) {
       : "Call enregistré. Le RDV est parti au dispatch (onglet Planning).";
     if (r.rdv_conflit) msgOk += " Attention : il y a déjà un RDV " + r.rdv_conflit + " chez la même personne.";
     toast(msgOk, (r.rdv_erreur || r.rdv_conflit) ? "err" : "", (r.rdv_erreur || r.rdv_conflit) ? 8000 : 4000);
+    // le bon message à coller au prospect, au bon moment
+    const prenomP = (c.prospect || "").trim().split(/\s+/)[0] || "";
+    const today2 = SalesStats.ymdLocal(new Date());
+    if (r.rdv && (c.res_setting === "Calé (à venir)" || c.res_setting === "RDV de vente calé")) {
+      proposeMessage("recap_rdv", prenomP, c.rdv_le ? quandJoli(c.rdv_le, today2) : "");
+    } else if (c.res_closing === "Closé") {
+      proposeMessage("bienvenue", prenomP, "");
+    } else if (["Pas closé", "À relancer"].includes(c.res_closing)) {
+      proposeMessage("post_appel", prenomP, "");
+    }
     loadData();
   } catch (err) {
     toast("Ça n'a pas marché : " + err.message, "err");
@@ -1477,6 +1580,7 @@ function montreFile() {
       <div class="offre-infos">Pour le ${esc(r.date)} · ${r.echange ? "dernier échange " + esc(jolieDate(r.echange, today)) : ""}${r.source ? " · " + esc(r.source) : ""}${r.notes ? "<br>" + esc(r.notes) : ""}</div>
       <div class="offre-actions">
         <button class="abtn" id="fileCopier">Copier le message</button>
+        <button class="abtn" id="fileReporte">DM envoyé</button>
         <button class="abtn oui" id="fileLog">Log le résultat</button>
         <button class="abtn" id="fileSuivant">Suivant</button>
       </div>
@@ -1495,11 +1599,16 @@ function montreFile() {
     else if (r.contact) { PENDING_TEL = r.contact; PENDING_TEL_PROSPECT = r.prospect === "?" ? "" : r.prospect; }
     if (r.source) el("inSource").value = r.source;
   });
+  el("fileReporte").addEventListener("click", () => montreReporte(r.callId || "", () => { FILE_IDX++; montreFile(); }));
   el("fileSuivant").addEventListener("click", () => { FILE_IDX++; montreFile(); });
   el("fileQuitter").addEventListener("click", () => { fermeOverlay(ov); });
 }
 
 // ----- Prospection : la machine à DM (inspirée du process de Kéo) -----
+const prenomDe = h => {
+  const t = String(h || "").replace(/^@/, "").split(/[._-]/)[0];
+  return t ? t[0].toUpperCase() + t.slice(1) : "";
+};
 const LEAD_ETATS = { a_contacter: ["À contacter", "grey"], contacte: ["Contacté", "amber"], repondu: ["Répondu", ""], appel_reserve: ["Appel réservé", "blue"], negociation: ["En négociation", "blue"], signe: ["Converti", "green"], perdu: ["Perdu", "red"] };
 function mesLeads() {
   return LEADS.filter(l => l.qui === MOI.nom);
@@ -1524,13 +1633,15 @@ function renderProspection(s) {
   const relancesJour = miens.filter(l => l.derniere_relance_le === today).length;
   const actionsJour = contactsJour + relancesJour;
   const aContacter = miens.filter(l => l.statut === "a_contacter" && !leadConverti(l));
-  const relancesDues = miens.filter(l => l.relance_le && l.relance_le <= today && !["a_contacter", "perdu", "signe"].includes(l.statut) && !leadConverti(l))
+  const filsChauds = miens.filter(l => l.statut === "repondu" && !leadConverti(l))
+    .sort((p, q) => String(p.repondu_le || "").localeCompare(String(q.repondu_le || "")));
+  const relancesDues = miens.filter(l => l.relance_le && l.relance_le <= today && !["a_contacter", "perdu", "signe", "repondu"].includes(l.statut) && !leadConverti(l))
     .sort((p, q) => p.relance_le.localeCompare(q.relance_le));
   const froids = relancesDues.filter(l => l.relance_le < today);
   // badge de nav
   const bp = el("bPros");
   if (bp) {
-    const n = lecteur ? 0 : aContacter.length + relancesDues.length;
+    const n = lecteur ? 0 : aContacter.length + relancesDues.length + filsChauds.length;
     bp.style.display = n ? "" : "none";
     bp.textContent = n;
   }
@@ -1572,9 +1683,23 @@ function renderProspection(s) {
     <h3><span class="kdot" style="background:${coul}"></span>${titre}<span class="knb">${liste.length}</span></h3>
     ${liste.length ? liste.map(l => ligneLead(l, bouton(l))).join("") : `<div class="kvide">${vide}</div>`}
   </div>`;
+  const chronoRepondu = l => {
+    if (!l.repondu_le) return "";
+    const j = Math.round((new Date(today) - new Date(l.repondu_le)) / 86400000);
+    const txt = j <= 0 ? "a répondu aujourd'hui" : "a répondu il y a " + j + " j";
+    return `<span class="${j >= 1 ? "late" : ""}" style="${j >= 1 ? "" : "color:#34d399"}">${txt}</span>`;
+  };
   el("prosFiles").innerHTML = lecteur ? "" :
-    zoneF("À contacter", "#948da6", aContacter, "Aucun lead à contacter. Ajoute-en au-dessus.", l => `<button class="abtn oui" data-ldgeste="contacte" data-lid="${l.id}">Contacté</button>`) +
-    zoneF("Relances à faire", "#fbbf24", relancesDues, "Tout est relancé. Personne ne refroidit.", l => `<button class="abtn oui" data-ldgeste="relance" data-lid="${l.id}">Relancé</button>`);
+    (filsChauds.length ? `<div class="pzone" style="border-color:#3a2f5c">
+      <h3><span class="kdot" style="background:#34d399"></span>Ils ont répondu — réponds vite, c'est chaud<span class="knb">${filsChauds.length}</span></h3>
+      ${filsChauds.map(l => `<div class="ld" data-lid="${l.id}">
+        <span style="cursor:pointer" data-fichelead="${l.id}">${avi(l.handle.replace(/^@/, ""))}</span>
+        <div class="ld-i" style="cursor:pointer" data-fichelead="${l.id}"><div class="ld-m">${chronoRepondu(l)}${l.abonnes ? `<span>${esc(l.abonnes)}</span>` : ""}${l.niche ? `<span>${esc(l.niche)}</span>` : ""}</div></div>
+        <button class="abtn oui" data-ldcaler="${l.id}">Caler le setting</button>
+      </div>`).join("")}
+    </div>` : "") +
+    zoneF("À contacter", "#948da6", aContacter, "Aucun lead à contacter. Ajoute-en au-dessus.", l => `<button class="abtn" data-ldcopie="premier_dm" data-lh="${esc(l.handle)}">Copier le DM</button><button class="abtn oui" data-ldgeste="contacte" data-lid="${l.id}">Contacté</button>`) +
+    zoneF("Relances à faire", "#fbbf24", relancesDues, "Tout est relancé. Personne ne refroidit.", l => `<button class="abtn" data-ldcopie="lead_muet" data-lh="${esc(l.handle)}">Copier la relance</button><button class="abtn oui" data-ldgeste="relance" data-lid="${l.id}">Relancé</button>`);
   // le chemin vers la prochaine vente
   const contactes = miens.filter(l => l.statut !== "a_contacter" || leadConverti(l));
   const repondus = contactes.filter(l => ["repondu", "appel_reserve", "negociation", "signe"].includes(l.statut) || leadConverti(l));
@@ -1603,6 +1728,16 @@ function renderProspection(s) {
     ${phrase ? `<div class="sinfo" style="margin-top:8px;color:var(--accent)">${esc(phrase)}</div>` : ""}
   </div>`;
   // les 4 compteurs
+  // fenêtre chaude : répondu -> premier call (jours), médiane
+  const fenetres = [];
+  miens.forEach(l => {
+    if (!l.repondu_le || !leadConverti(l)) return;
+    const cle = "ig:" + String(l.handle || "").trim().toLowerCase().replace(/^@/, "").replace(/\s+/g, "");
+    const dates = RECORDS.filter(r => SalesStats.keyOf(r) === cle).map(r => SalesStats.dateOf(r)).sort();
+    const premier = dates.find(d => d >= l.repondu_le);
+    if (premier) fenetres.push(Math.round((new Date(premier) - new Date(l.repondu_le)) / 86400000));
+  });
+  const fenetreMed = fenetres.length ? fenetres.sort((x, y) => x - y)[Math.floor(fenetres.length / 2)] : null;
   const pipeline = miens.filter(l => !["perdu"].includes(l.statut)).length;
   const convertisMois = convertis.filter(l => true).length;
   el("prosCompteurs").innerHTML = lecteur ? "" : `<div class="grid3" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
@@ -1610,6 +1745,7 @@ function renderProspection(s) {
     <div class="card"><div class="label">Relances aujourd'hui</div><div class="value" style="font-size:28px">${relancesJour}</div></div>
     <div class="card"><div class="label">Taux de réponse</div><div class="value" style="font-size:28px">${tauxRep} %</div></div>
     <div class="card"><div class="label">Convertis (total)</div><div class="value" style="font-size:28px">${convertisMois}</div></div>
+    ${fenetreMed !== null ? `<div class="card"><div class="label">Fenêtre chaude (répondu → calé)</div><div class="value" style="font-size:28px">${fenetreMed} j</div></div>` : ""}
   </div>`;
   // branchements
   document.querySelectorAll("[data-ldgeste]").forEach(b => b.addEventListener("click", async () => {
@@ -1620,6 +1756,24 @@ function renderProspection(s) {
     finally { b.classList.remove("busy"); }
   }));
   document.querySelectorAll("[data-fichelead]").forEach(x => x.addEventListener("click", () => montreLead(x.dataset.fichelead)));
+  document.querySelectorAll("[data-ldcopie]").forEach(b => b.addEventListener("click", async () => {
+    const msg = msgCategorie(b.dataset.ldcopie, prenomDe(b.dataset.lh), "");
+    try { await navigator.clipboard.writeText(msg); toast("Copié, colle-le en DM à " + b.dataset.lh + "."); }
+    catch (_) { copieManuelle(msg, "Copie le message"); }
+  }));
+  document.querySelectorAll("[data-ldcaler]").forEach(b => b.addEventListener("click", () => calerDepuisLead(b.dataset.ldcaler)));
+}
+function calerDepuisLead(id) {
+  const l = LEADS.find(x => x.id === id);
+  if (!l) return;
+  showPage("log");
+  resetForm();
+  setType("Setting");
+  el("inProspect").value = l.handle.replace(/^@/, "").replace(/[._]/g, " ");
+  el("inInsta").value = l.handle;
+  el("inResSetting").value = "Calé (à venir)";
+  el("inResSetting").dispatchEvent(new Event("change"));
+  toast("Pré-rempli depuis la prospection : mets la date du setting et enregistre. Le lead passera en Converti tout seul.");
 }
 function montreLead(id) {
   const l = LEADS.find(x => x.id === id);
@@ -1654,17 +1808,7 @@ function montreLead(id) {
     catch (e) { toast("Ça n'a pas marché : " + e.message, "err"); }
   }));
   const cal = el("ldCaler");
-  if (cal) cal.addEventListener("click", () => {
-    fermeOverlay(ov);
-    showPage("log");
-    resetForm();
-    setType("Setting");
-    el("inProspect").value = l.handle.replace(/^@/, "").replace(/[._]/g, " ");
-    el("inInsta").value = l.handle;
-    el("inResSetting").value = "Calé (à venir)";
-    el("inResSetting").dispatchEvent(new Event("change"));
-    toast("Pré-rempli depuis la prospection : mets la date du setting et enregistre. Le lead passera en Converti tout seul.");
-  });
+  if (cal) cal.addEventListener("click", () => { fermeOverlay(ov); calerDepuisLead(l.id); });
   el("ldSauver").addEventListener("click", async () => {
     try {
       await call("lead_maj", { id: l.id, relance_le: el("ldRelDate").value || "", note: el("ldNoteEdit").value.trim() });
@@ -2176,6 +2320,57 @@ function montreObjectif() {
   });
   document.body.appendChild(ov);
   ov.querySelector("#objMontant").focus();
+}
+
+// « DM envoyé » : la relance est faite, on attend la réponse — on la décale proprement
+function montreReporte(callId, apres) {
+  if (!callId) return toast("Relance introuvable (recharge la page).", "err");
+  const ov = document.createElement("div");
+  ov.className = "dlg-ov";
+  ov.innerHTML = `<div class="dlg">
+    <div class="dlg-t">DM envoyé — on réessaie quand ?</div>
+    <div class="dlg-x">La relance est décalée, le prospect ne recevra pas deux fois le même message.</div>
+    <div class="dlg-b" style="justify-content:center;flex-wrap:wrap">
+      <button class="abtn" data-j="3">Dans 3 jours</button>
+      <button class="abtn" data-j="7">Dans 1 semaine</button>
+      <button class="abtn" data-j="30">Dans 1 mois</button>
+      <button class="dlg-non">Annuler</button>
+    </div></div>`;
+  ov.querySelector(".dlg-non").addEventListener("click", () => ov.remove());
+  ov.addEventListener("click", e2 => { if (e2.target === ov) ov.remove(); });
+  ov.querySelectorAll("[data-j]").forEach(b => b.addEventListener("click", async () => {
+    try {
+      await call("relance_reporte", { id: callId, jours: Number(b.dataset.j) });
+      ov.remove();
+      toast("Relance décalée.");
+      if (apres) apres(); else loadData();
+    } catch (e) { toast("Ça n'a pas marché : " + e.message, "err"); }
+  }));
+  document.body.appendChild(ov);
+}
+
+// Après un log : le message à coller au prospect, prêt à copier
+function proposeMessage(cat, prenom, date) {
+  const txt = msgCategorie(cat, prenom, date);
+  if (!txt) return;
+  const ov = document.createElement("div");
+  ov.className = "dlg-ov";
+  ov.innerHTML = `<div class="dlg">
+    <div class="dlg-t">Envoie ça au prospect</div>
+    <div class="dlg-x">Copie-colle en DM (modifiable dans Réglages > Messages).</div>
+    <textarea readonly></textarea>
+    <div class="dlg-b">
+      <button class="dlg-non">Plus tard</button>
+      <button class="dlg-oui">Copier le message</button>
+    </div></div>`;
+  ov.querySelector("textarea").value = txt;
+  ov.querySelector(".dlg-non").addEventListener("click", () => ov.remove());
+  ov.addEventListener("click", e2 => { if (e2.target === ov) ov.remove(); });
+  ov.querySelector(".dlg-oui").addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(ov.querySelector("textarea").value); toast("Copié, colle-le en DM."); ov.remove(); }
+    catch (_) { ov.querySelector("textarea").focus(); ov.querySelector("textarea").select(); toast("Copie-le à la main (tout est sélectionné).", "err"); }
+  });
+  document.body.appendChild(ov);
 }
 
 // ----- Fiche prospect : tout l'historique avant de rappeler -----
@@ -2931,6 +3126,8 @@ async function init() {
     chercheT = setTimeout(() => { PROSPECT_FILTRE = el("prospectCherche").value; render(); }, 200);
   });
   el("inEncaisseSel").addEventListener("change", majConditionnels);
+  el("inCause").addEventListener("change", majConditionnels);
+  el("inCauseV").addEventListener("change", majConditionnels);
   el("inCaleLe").addEventListener("change", () => majJourHint("inCaleLe", "jourHintCale"));
   el("inSuiteLe").addEventListener("change", () => majJourHint("inSuiteLe", "jourHintSuite"));
 
