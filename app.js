@@ -3300,7 +3300,7 @@ async function init() {
   setInterval(() => { if (document.visibilityState === "visible") loadData(); }, 10 * 60 * 1000);
 }
 
-// L'écran de bienvenue : une seule fois, à la première connexion d'un membre
+// La bienvenue : 3 écrans de repérage, une seule fois, à la première connexion
 function montreAccueil() {
   if (MOI.role !== "membre") return;
   if ((MOI.onboarding || {}).accueil) return;
@@ -3309,23 +3309,50 @@ function montreAccueil() {
   if (dejaActif) return;
   const ov = el("accueilOverlay");
   if (!ov) return;
-  ov.innerHTML = `<div class="offre-carte" style="text-align:center;max-width:420px;margin-top:14vh">
-    <div class="logo" style="padding:0">KAIRÓ<span>Σ</span></div>
-    <div class="logosub" style="padding:2px 0 18px">NEW ERA</div>
-    <div class="offre-titre" style="font-size:22px">Bienvenue, ${esc(MOI.nom)}.</div>
-    <div class="offre-infos" style="margin-top:10px">Ici tu logges tes calls, tu prospectes et tu vois tes résultats en vrai.
-    Tes premières missions t'attendent sur ton dashboard : elles se cochent toutes seules au fur et à mesure.</div>
-    <div class="offre-actions" style="justify-content:center;margin-top:20px">
-      <button class="abtn oui" id="accueilGo" style="min-width:180px">C'est parti</button>
-    </div>
-  </div>`;
+  const ic = (d) => `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+  const REPERES = [
+    ["dashboard", ic('<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>'), "Dashboard", "ta base : tes missions et tes chiffres"],
+    ["prospection", ic('<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="0.5"/>'), "Prospection", "tes leads et tes messages à envoyer"],
+    ["log", ic('<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>'), "Log un call", "après chaque appel, tu le notes ici"],
+    ["planning", ic('<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 11h18"/>'), "Planning", "tes rendez-vous"],
+    ["relances", ic('<path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/>'), "Relances", "qui recontacter, jour par jour"],
+  ];
+  const ECRANS = [
+    () => `<div class="offre-titre" style="font-size:23px;margin-top:6px">Bienvenue, ${esc(MOI.nom)}.</div>
+      <div class="offre-infos" style="margin-top:10px">Tu fais partie de l'équipe. Ton espace est prêt.</div>
+      <div class="offre-actions" style="justify-content:center;margin-top:22px"><button class="abtn oui" data-acc="1" style="min-width:170px">Suivant</button></div>`,
+    () => `<div class="offre-titre" style="font-size:19px">Tes repères</div>
+      <div style="margin-top:12px">${REPERES.map(r => `<div class="acc-ligne">${r[1]}<div><b>${r[2]}</b><span>${r[3]}</span></div></div>`).join("")}</div>
+      <div class="offre-actions" style="justify-content:center;margin-top:18px"><button class="abtn oui" data-acc="2" style="min-width:170px">Suivant</button></div>`,
+    () => `<div class="offre-titre" style="font-size:19px">Une seule chose à faire</div>
+      <div class="offre-infos" style="margin-top:10px">Tes premières missions t'attendent en haut de ton dashboard.
+      Elles se cochent toutes seules quand tu les fais.</div>
+      <div class="offre-actions" style="justify-content:center;margin-top:22px"><button class="abtn oui" data-acc="fin" style="min-width:190px">Voir mes missions</button></div>`,
+  ];
+  const dessine = (i) => {
+    ov.innerHTML = `<div class="offre-carte" style="text-align:center;max-width:420px;margin-top:12vh">
+      <div class="logo" style="padding:0">KAIRÓ<span>Σ</span></div>
+      <div class="logosub" style="padding:2px 0 12px">NEW ERA</div>
+      ${ECRANS[i]()}
+      <div class="acc-dots">${ECRANS.map((_, k) => `<i${k === i ? ' class="on"' : ""}></i>`).join("")}</div>
+    </div>`;
+    ov.querySelector("[data-acc]").addEventListener("click", (ev) => {
+      const suite = ev.currentTarget.dataset.acc;
+      if (suite !== "fin") return dessine(Number(suite));
+      ov.style.display = "none";
+      ov.innerHTML = "";
+      MOI.onboarding = { ...(MOI.onboarding || {}), accueil: true };
+      call("guide_coche", { etape: "accueil" }).catch(() => { /* réaffichable */ });
+      showPage("dashboard");
+      const gp = el("guideZone") && el("guideZone").firstElementChild;
+      if (gp) {
+        gp.scrollIntoView({ behavior: "smooth", block: "center" });
+        gp.classList.add("flashG");
+        setTimeout(() => gp.classList.remove("flashG"), 3200);
+      }
+    });
+  };
+  dessine(0);
   ov.style.display = "";
-  el("accueilGo").addEventListener("click", () => {
-    ov.style.display = "none";
-    ov.innerHTML = "";
-    MOI.onboarding = { ...(MOI.onboarding || {}), accueil: true };
-    call("guide_coche", { etape: "accueil" }).catch(() => { /* réaffichable */ });
-    showPage("dashboard");
-  });
 }
 init();
